@@ -366,8 +366,21 @@ export const useAppStore = create<AppState>((set, get) => ({
             set((state) => ({
               safetyEvents: [normalized, ...state.safetyEvents.filter((e) => e.id !== normalized.id)],
             }))
-            // Immediately play loud emergency siren alarm across listening devices
-            sosAlarmPlayer.play().catch(() => {})
+            // Immediately play loud emergency siren alarm ONLY in Dispatcher portal
+            const activeRole = get().role
+            const userRole = get().currentUser?.role?.toLowerCase()
+            const isDispatcher =
+              activeRole === 'admin' ||
+              userRole === 'admin' ||
+              userRole === 'dispatcher' ||
+              (typeof window !== 'undefined' &&
+                (window.location.hash.startsWith('#/admin') || window.location.pathname.startsWith('/admin')))
+
+            if (isDispatcher) {
+              sosAlarmPlayer.play().catch(() => {})
+            } else {
+              sosAlarmPlayer.stop()
+            }
           }
           if (payload?.ride) {
             set((state) => ({
@@ -614,16 +627,21 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   // Auth
   setRole: (role: Role) => {
+    if (role !== 'admin') {
+      sosAlarmPlayer.stop()
+    }
     localStorage.setItem('campusflow_role', role)
     set({ role })
   },
   loginAsStudent: (studentId: string) => {
+    sosAlarmPlayer.stop()
     localStorage.setItem('campusflow_user_id', studentId)
     localStorage.setItem('campusflow_role', 'student')
     api.setAuth(studentId, get().currentDriverId)
     set({ currentStudentId: studentId, role: 'student' })
   },
   loginAsDriver: (driverId: string) => {
+    sosAlarmPlayer.stop()
     localStorage.setItem('campusflow_driver_id', driverId)
     localStorage.setItem('campusflow_role', 'driver')
     api.setAuth(get().currentStudentId, driverId)
@@ -762,6 +780,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
   logout: () => {
+    sosAlarmPlayer.stop()
     localStorage.removeItem('campusflow_token')
     localStorage.removeItem('campusflow_role')
     localStorage.removeItem('campusflow_user_id')
@@ -1102,6 +1121,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   resolveSafetyEvent: async (eventId: string) => {
     try {
+      sosAlarmPlayer.stop()
       const res = await api.resolveSafetyEvent(eventId)
       const resolvedEvent: SafetyEvent = normalizeSafetyEvent((res as any)?.data || (res as any)?.event || res)
       set((state) => ({
@@ -1148,8 +1168,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   // Safety Actions
   triggerSOS: async (params?: { rideId?: string; userId?: string; lat?: number; lng?: number } | string, studentId?: string) => {
     try {
-      // Immediately start sounding loud siren alarm upon user gesture
-      sosAlarmPlayer.play().catch(() => {})
+      // Audio alarm must strictly sound in Dispatcher portal & emergency contact phone, NOT on student/commuter device
+      sosAlarmPlayer.stop()
 
       let payload: {
         rideId?: string
@@ -1220,6 +1240,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   acknowledgeSafetyEvent: async (eventId: string) => {
     try {
+      sosAlarmPlayer.stop()
       const res = await api.acknowledgeSafetyEvent(eventId)
       const acknowledged: SafetyEvent = normalizeSafetyEvent((res as any)?.data || (res as any)?.event || res)
       set((state) => ({

@@ -1,8 +1,39 @@
-﻿/**
+/**
  * Universal Loud SOS Emergency Alarm Audio Controller
  * Plays local project sound /sounds/sos-alarm.mp3 with continuous loop,
  * fallback synthesis buzzer if audio is restricted, and graceful pause/stop.
  */
+
+/**
+ * Helper to determine whether the user is actively in the Dispatcher (Admin) portal.
+ * The audible alarm siren is STRICTLY restricted to the Dispatcher portal and must
+ * NEVER ring on student, faculty, driver or commuter devices.
+ */
+export function isDispatcherPortal(): boolean {
+  if (typeof window === 'undefined') return false
+
+  // 1. Check current URL hash (app uses HashRouter)
+  const hash = window.location.hash || ''
+  if (hash.startsWith('#/admin') || hash.includes('/admin/')) return true
+
+  // 2. Check pathname fallback
+  const pathname = window.location.pathname || ''
+  if (pathname.startsWith('/admin') || pathname.includes('/admin/')) return true
+
+  // 3. Check active stored user session
+  try {
+    const rawRole = localStorage.getItem('campusflow_role') || localStorage.getItem('role') || localStorage.getItem('userRole')
+    if (rawRole === 'admin' || rawRole === 'dispatcher') return true
+
+    const rawUser = localStorage.getItem('currentUser') || localStorage.getItem('user')
+    if (rawUser) {
+      const parsed = JSON.parse(rawUser)
+      if (parsed?.role?.toLowerCase() === 'admin' || parsed?.role?.toLowerCase() === 'dispatcher') return true
+    }
+  } catch {}
+
+  return false
+}
 
 class SosAlarmAudioPlayer {
   private audio: HTMLAudioElement | null = null
@@ -19,13 +50,31 @@ class SosAlarmAudioPlayer {
       } catch (e) {
         console.warn('[SosAlarm] HTMLAudioElement init error:', e)
       }
+
+      // Automatically silence audio if the user navigates away from the Dispatcher portal
+      window.addEventListener('hashchange', () => {
+        if (!isDispatcherPortal() && this.isPlaying) {
+          this.stop()
+        }
+      })
+      window.addEventListener('popstate', () => {
+        if (!isDispatcherPortal() && this.isPlaying) {
+          this.stop()
+        }
+      })
     }
   }
 
   /**
-   * Start playing the loud emergency alarm sound continuously
+   * Start playing the loud emergency alarm sound continuously.
+   * STRICT ENFORCEMENT: Only permits playback if currently inside the Dispatcher portal.
    */
   public async play(): Promise<boolean> {
+    if (!isDispatcherPortal()) {
+      if (this.isPlaying) this.stop()
+      return false
+    }
+
     if (this.isPlaying) return true
 
     if (this.audio) {
@@ -34,10 +83,10 @@ class SosAlarmAudioPlayer {
         this.audio.volume = 1.0
         await this.audio.play()
         this.isPlaying = true
-        console.log('[SosAlarm] Playing loud SOS emergency alarm from /sounds/sos-alarm.mp3')
+        console.log('[SosAlarm] Playing loud SOS emergency alarm in Dispatcher Portal')
         return true
       } catch (err: any) {
-        console.warn('[SosAlarm] Browser autoplay restriction blocked audio.play(). Falling back to Web Audio buzzer:', err.message)
+        console.warn('[SosAlarm] Autoplay restriction or audio failure. Falling back to Web Audio buzzer:', err.message)
         return this.startFallbackBuzzer()
       }
     } else {

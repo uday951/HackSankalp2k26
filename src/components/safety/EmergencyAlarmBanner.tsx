@@ -1,14 +1,33 @@
-﻿import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
+import { useLocation } from 'react-router-dom'
 import { ShieldAlert, Volume2, VolumeX, CheckCircle, MapPin, ExternalLink } from 'lucide-react'
 import { useAppStore } from '../../store/appStore'
-import { sosAlarmPlayer } from '../../utils/alarmSound'
+import { sosAlarmPlayer, isDispatcherPortal } from '../../utils/alarmSound'
 import toast from 'react-hot-toast'
 
 export const EmergencyAlarmBanner: React.FC = () => {
+  const location = useLocation()
+  const role = useAppStore((s) => s.role)
+  const currentUser = useAppStore((s) => s.currentUser)
   const safetyEvents = useAppStore((s) => s.safetyEvents)
   const acknowledgeSafetyEvent = useAppStore((s) => s.acknowledgeSafetyEvent)
   const [isMuted, setIsMuted] = useState(false)
   const [acknowledgedIds, setAcknowledgedIds] = useState<Set<string>>(new Set())
+
+  // Strictly check if current view is the Dispatcher Portal
+  const isDispatcher =
+    role === 'admin' ||
+    currentUser?.role?.toLowerCase() === 'admin' ||
+    currentUser?.role?.toLowerCase() === 'dispatcher' ||
+    location.pathname.startsWith('/admin') ||
+    isDispatcherPortal()
+
+  // Ensure audio is stopped on all other portals (student, faculty, driver)
+  useEffect(() => {
+    if (!isDispatcher) {
+      sosAlarmPlayer.stop()
+    }
+  }, [isDispatcher])
 
   // Find active, unacknowledged SOS events
   const activeSosEvents = safetyEvents.filter((e) => {
@@ -21,7 +40,7 @@ export const EmergencyAlarmBanner: React.FC = () => {
   const currentSos = activeSosEvents[0]
 
   useEffect(() => {
-    if (currentSos && !isMuted) {
+    if (isDispatcher && currentSos && !isMuted) {
       sosAlarmPlayer.play().catch(() => {})
     } else {
       sosAlarmPlayer.stop()
@@ -30,9 +49,10 @@ export const EmergencyAlarmBanner: React.FC = () => {
     return () => {
       sosAlarmPlayer.stop()
     }
-  }, [currentSos, isMuted])
+  }, [isDispatcher, currentSos, isMuted])
 
-  if (!currentSos) return null
+  // If not in dispatcher portal or no active SOS, do not render banner
+  if (!isDispatcher || !currentSos) return null
 
   const handleAcknowledge = async () => {
     try {
