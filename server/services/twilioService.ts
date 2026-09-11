@@ -1,4 +1,4 @@
-import twilio from 'twilio'
+import type twilio from 'twilio'
 import { ENV } from '../config/env.js'
 import { normalizePhoneNumber, isValidPhoneNumber } from '../utils/phone.js'
 
@@ -64,13 +64,14 @@ export class TwilioService {
   private verifyServiceSid: string = ''
   private fromNumber: string = ''
   private localOtpStore = new Map<string, LocalOtpEntry>()
+  private initPromise: Promise<void> | null = null
 
   constructor() {
-    this.initClient()
+    this.initPromise = this.initClient()
   }
 
   /** Centralized Twilio initialization */
-  public initClient() {
+  public async initClient(): Promise<void> {
     const accountSid = ENV.TWILIO_ACCOUNT_SID?.trim()
     const authToken = ENV.TWILIO_AUTH_TOKEN?.trim()
     this.fromNumber = ENV.TWILIO_PHONE_NUMBER?.trim()
@@ -78,10 +79,17 @@ export class TwilioService {
 
     if (accountSid && authToken && (this.fromNumber || this.verifyServiceSid)) {
       try {
-        this.client = twilio(accountSid, authToken)
-        this.isConfigured = true
-        const maskedSid = accountSid.length > 8 ? accountSid.slice(0, 4) + '...' + accountSid.slice(-4) : 'Configured'
-        console.log('[TwilioService] Initialized official Twilio client with Account SID: ' + maskedSid)
+        const twilioLib = await import('twilio').then((m) => m.default || m).catch(() => null)
+        if (twilioLib) {
+          this.client = twilioLib(accountSid, authToken)
+          this.isConfigured = true
+          const maskedSid = accountSid.length > 8 ? accountSid.slice(0, 4) + '...' + accountSid.slice(-4) : 'Configured'
+          console.log('[TwilioService] Initialized official Twilio client with Account SID: ' + maskedSid)
+        } else {
+          this.isConfigured = false
+          this.client = null
+          console.log('[TwilioService] Twilio package not available on disk. Running in DEV simulation mode.')
+        }
       } catch (err: any) {
         this.isConfigured = false
         this.client = null
@@ -94,7 +102,14 @@ export class TwilioService {
     }
   }
 
-  public getStatus() {
+  private async ensureInitialized() {
+    if (this.initPromise) {
+      await this.initPromise
+    }
+  }
+
+  public async getStatus() {
+    await this.ensureInitialized()
     return {
       configured: this.isConfigured,
       hasVerifyService: Boolean(this.verifyServiceSid),
@@ -105,6 +120,7 @@ export class TwilioService {
 
   /** Universal Send SMS */
   async sendSMS(to: string, messageText: string): Promise<SendSmsResult> {
+    await this.ensureInitialized()
     const normalizedTo = normalizePhoneNumber(to)
     if (!normalizedTo || !isValidPhoneNumber(normalizedTo)) {
       return {
@@ -159,6 +175,7 @@ export class TwilioService {
 
   /** Universal Send OTP (Twilio Verify or standard SMS OTP) */
   async sendOTP(phone: string): Promise<SendOtpResult> {
+    await this.ensureInitialized()
     const normalized = normalizePhoneNumber(phone)
     if (!normalized || !isValidPhoneNumber(normalized)) {
       return {
@@ -257,6 +274,7 @@ export class TwilioService {
 
   /** Universal Verify OTP */
   async verifyOTP(phone: string, code: string): Promise<VerifyOtpResult> {
+    await this.ensureInitialized()
     const normalized = normalizePhoneNumber(phone)
     const trimmedCode = (code || '').trim()
 
@@ -390,6 +408,7 @@ export class TwilioService {
 
   /** Universal SOS Emergency Voice Call Dispatch via Twilio */
   async makeEmergencyCall(payload: SosAlertPayload): Promise<SendCallResult> {
+    await this.ensureInitialized()
     const targetPhone = payload.recipientPhone?.trim() || ENV.SOS_ALERT_PHONE_NUMBER?.trim()
 
     if (!targetPhone) {
