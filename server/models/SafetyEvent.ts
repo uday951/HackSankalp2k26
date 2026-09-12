@@ -29,12 +29,15 @@ export interface ISafetyEvent extends Document {
     name: string
     relationship: string
     phone: string
+    email?: string
   }
   smsStatus?: 'SENT' | 'FAILED' | 'NOT_CONFIGURED'
   smsMessage?: string
   callStatus?: 'INITIATED' | 'QUEUED' | 'RINGING' | 'IN_PROGRESS' | 'COMPLETED' | 'FAILED' | 'NOT_CONFIGURED'
   callSid?: string
   callMessage?: string
+  emailStatus?: 'SENT' | 'FAILED' | 'NOT_CONFIGURED'
+  emailMessage?: string
   createdAt: Date
   updatedAt: Date
 }
@@ -81,12 +84,15 @@ const SafetyEventSchema = new Schema<ISafetyEvent>(
       name: { type: String },
       relationship: { type: String },
       phone: { type: String },
+      email: { type: String },
     },
     smsStatus: { type: String, default: 'NOT_CONFIGURED' },
     smsMessage: { type: String },
     callStatus: { type: String, default: 'NOT_CONFIGURED' },
     callSid: { type: String },
     callMessage: { type: String },
+    emailStatus: { type: String, default: 'NOT_CONFIGURED' },
+    emailMessage: { type: String },
   },
   { timestamps: true }
 )

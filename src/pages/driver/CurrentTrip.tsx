@@ -70,14 +70,28 @@ export default function CurrentTrip() {
 
   const loadDriverRides = useCallback(async () => {
     try {
-      const fresh = await api.getDriverRides()
+      const [fresh, currentTrip] = await Promise.all([
+        api.getDriverRides().catch(() => null),
+        api.getCurrentTripForDriver(currentDriverId || undefined).catch(() => null),
+      ])
+      const combined: any[] = []
+      if (currentTrip) {
+        combined.push(currentTrip)
+      }
       if (Array.isArray(fresh)) {
-        setDriverRides(fresh)
+        for (const r of fresh) {
+          if (!combined.some((c) => c.id === r.id)) {
+            combined.push(r)
+          }
+        }
+      }
+      if (combined.length > 0) {
+        setDriverRides(combined)
       }
     } catch {
       // fallback — use global rides store
     }
-  }, [])
+  }, [currentDriverId])
 
   // Fetch freshest rides from server on mount
   useEffect(() => {
@@ -97,7 +111,11 @@ export default function CurrentTrip() {
         event === 'PASSENGER_DROPPED' ||
         event === 'RIDE_UPDATED' ||
         event === 'RIDE_STARTED' ||
-        event === 'ROUTE_UPDATED'
+        event === 'ROUTE_UPDATED' ||
+        event === 'TRIP_CREATED' ||
+        event === 'TRIP_ROUTE_UPDATED' ||
+        event === 'PASSENGER_JOINED_TRIP' ||
+        event === 'PASSENGER_REMOVED_FROM_TRIP'
       ) {
         refreshRides()
         loadDriverRides()
@@ -735,6 +753,8 @@ export default function CurrentTrip() {
           interactive
           alertMode={progress?.isOffRoute || effectiveRide.hasDeviation}
           showRecenterButton={isRecenterNeeded}
+          rideBookedSeats={effectiveRide.bookedSeats ?? manifestPassengers.length}
+          rideCapacity={effectiveRide.capacity}
         />
 
         {/* Floating Telematics Simulation & GPS Controls */}

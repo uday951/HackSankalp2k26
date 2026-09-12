@@ -48,6 +48,6 @@ export default defineConfig({
       'server/tests/rideWorkflowLifecycle.test.ts',
       'server/tests/sosEmergencyWorkflow.test.ts'
     ],
-    exclude: ['server/tests/e2e.test.ts', 'node_modules/**'],
+    exclude: ['server/tests/e2e.test.ts', 'tests/**', 'node_modules/**'],
   },
 })

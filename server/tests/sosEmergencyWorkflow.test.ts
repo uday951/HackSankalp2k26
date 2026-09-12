@@ -20,6 +20,7 @@ describe('CampusFlow — End-to-End SOS / Emergency Alert Workflow Test Suite', 
       name: 'Dr. Srinivas Rao',
       relationship: 'Parent',
       phone: '+919876543210',
+      email: 'srinivas.rao@family.org',
     }
 
     const res = await axios.post(
@@ -31,6 +32,7 @@ describe('CampusFlow — End-to-End SOS / Emergency Alert Workflow Test Suite', 
     expect(res.data.success).toBe(true)
     expect(res.data.data.name).toBe('Dr. Srinivas Rao')
     expect(res.data.data.phone).toBe('+919876543210')
+    expect(res.data.data.email).toBe('srinivas.rao@family.org')
 
     // Fetch and verify
     const getRes = await axios.get(`${API_BASE}/users/${studentId}/emergency-contact`, {
@@ -38,6 +40,7 @@ describe('CampusFlow — End-to-End SOS / Emergency Alert Workflow Test Suite', 
     })
     expect(getRes.data.success).toBe(true)
     expect(getRes.data.data.name).toBe('Dr. Srinivas Rao')
+    expect(getRes.data.data.email).toBe('srinivas.rao@family.org')
   })
 
   // 2. Setup Driver Emergency Contact
@@ -46,6 +49,7 @@ describe('CampusFlow — End-to-End SOS / Emergency Alert Workflow Test Suite', 
       name: 'Lakshmi Kumar',
       relationship: 'Spouse',
       phone: '+919123456780',
+      email: 'lakshmi.kumar@family.org',
     }
 
     const res = await axios.post(
@@ -57,10 +61,11 @@ describe('CampusFlow — End-to-End SOS / Emergency Alert Workflow Test Suite', 
     expect(res.data.success).toBe(true)
     expect(res.data.data.name).toBe('Lakshmi Kumar')
     expect(res.data.data.phone).toBe('+919123456780')
+    expect(res.data.data.email).toBe('lakshmi.kumar@family.org')
   })
 
   // 3. Student triggers SOS -> STUDENT_SOS_TRIGGERED
-  it('3. Student Triggers SOS -> Capture Telemetry, SMS Dispatch, Dispatcher Notification', async () => {
+  it('3. Student Triggers SOS -> Capture Telemetry, SMS Dispatch, Email Dispatch, Dispatcher Notification', async () => {
     const sosPayload = {
       userId: studentId,
       lat: 17.3616,
@@ -80,7 +85,9 @@ describe('CampusFlow — End-to-End SOS / Emergency Alert Workflow Test Suite', 
     expect(event.eventType).toBe('STUDENT_SOS_TRIGGERED')
     expect(event.emergencyContact).toBeDefined()
     expect(event.emergencyContact.name).toBe('Dr. Srinivas Rao')
+    expect(event.emergencyContact.email).toBe('srinivas.rao@family.org')
     expect(event.smsStatus).toBeDefined()
+    expect(event.emailStatus).toBeDefined()
     expect(event.lat).toBe(17.3616)
     expect(event.lng).toBe(78.4747)
 
@@ -139,12 +146,36 @@ describe('CampusFlow — End-to-End SOS / Emergency Alert Workflow Test Suite', 
     expect(event.status).toBe('ACTIVE')
     expect(event.emergencyContact).toBeDefined()
     expect(event.emergencyContact.name).toBe('Lakshmi Kumar')
+    expect(event.emergencyContact.email).toBe('lakshmi.kumar@family.org')
+    expect(event.emailStatus).toBeDefined()
 
     driverSosEventId = event.id || event._id
   })
 
-  // 6. Dispatcher views Safety Events
-  it('6. Dispatcher Retrieves Active Safety & SOS Events Registry', async () => {
+  // 6. Faculty triggers SOS
+  it('6. Faculty Triggers SOS -> Capture Telemetry, Contact Email, and Active Event', async () => {
+    const facultySosPayload = {
+      userId: 'f1',
+      lat: 17.365,
+      lng: 78.48,
+      forceNew: true,
+    }
+
+    const res = await axios.post(`${API_BASE}/safety/sos`, facultySosPayload, {
+      headers: { 'x-user-id': 'f1', 'Content-Type': 'application/json' },
+    })
+
+    expect(res.data.success).toBe(true)
+    const event = res.data.data
+    expect(event).toBeDefined()
+    expect(event.userId).toBe('f1')
+    expect(event.status).toBe('ACTIVE')
+    expect(event.userRole).toBe('FACULTY')
+    expect(event.emailStatus).toBeDefined()
+  })
+
+  // 7. Dispatcher views Safety Events
+  it('7. Dispatcher Retrieves Active Safety & SOS Events Registry', async () => {
     const res = await axios.get(`${API_BASE}/safety/events`, {
       headers: { 'x-user-id': 'admin1' },
     })

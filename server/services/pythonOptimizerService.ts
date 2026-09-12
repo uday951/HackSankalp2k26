@@ -5,6 +5,8 @@
  * and Scikit-Learn demand forecasting, with automatic fallback if the Python service is offline.
  */
 
+import { calculateDirectionSimilarity } from './matchingService.js'
+
 export interface LocationPayload {
   lat: number
   lng: number
@@ -447,8 +449,37 @@ class PythonOptimizerService {
 
     for (const v of availableVehicles) {
       const remainingCapacity = v.available_seats
-      const vReqs = requests.filter((r) => !assignedIds.has(r.id)).slice(0, remainingCapacity)
-      if (vReqs.length === 0) continue
+      const unassigned = requests.filter((r) => !assignedIds.has(r.id))
+      if (unassigned.length === 0) break
+
+      // Seed cluster with first unassigned request
+      const seedReq = unassigned[0]
+      const vReqs: RideRequestPayload[] = [seedReq]
+      let currentSeats = seedReq.seats_requested || 1
+
+      for (let i = 1; i < unassigned.length; i++) {
+        const candidate = unassigned[i]
+        const candSeats = candidate.seats_requested || 1
+        if (currentSeats + candSeats > remainingCapacity) continue
+
+        // Direction similarity with seed
+        const dirSim = calculateDirectionSimilarity(
+          seedReq.pickup,
+          seedReq.destination,
+          candidate.pickup,
+          candidate.destination
+        )
+
+        // Female-only check
+        if (seedReq.female_only_required && candidate.gender === 'MALE') continue
+        if (candidate.female_only_required && seedReq.gender === 'MALE') continue
+
+        // Only group if direction is aligned (cos >= 0.2)
+        if (dirSim >= 0.2) {
+          vReqs.push(candidate)
+          currentSeats += candSeats
+        }
+      }
 
       const stops: OptimizedRouteStop[] = [
         {

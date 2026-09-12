@@ -42,9 +42,9 @@ export const GlobalSosModal: React.FC<GlobalSosModalProps> = ({ isOpen, onClose 
   const [customPhone, setCustomPhone] = useState('')
   const [customName, setCustomName] = useState('')
   const [isEditingContact, setIsEditingContact] = useState(false)
-  const [isMuted, setIsMuted] = useState(false)
   const [gpsCoords, setGpsCoords] = useState<{ lat: number; lng: number } | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isMuted, setIsMuted] = useState(false)
 
   const user = currentUser || (role === 'driver' ? currentDriver : currentStudent)
   const effectiveUserId = user?.id || (role === 'driver' ? currentDriverId || 'd1' : currentStudentId || 's1')
@@ -160,7 +160,7 @@ export const GlobalSosModal: React.FC<GlobalSosModalProps> = ({ isOpen, onClose 
 
   const handleConfirmSOS = async () => {
     setIsSubmitting(true)
-    // Audio alarm is exclusively played in the Dispatcher portal & via phone call to emergency contact
+    // NOTE: Siren audio is strictly sounded at Dispatcher Command Center, NOT on user/driver device
     sosAlarmPlayer.stop()
 
     try {
@@ -180,7 +180,7 @@ export const GlobalSosModal: React.FC<GlobalSosModalProps> = ({ isOpen, onClose 
       })
 
       toast.success(
-        `Emergency SOS Dispatched! Automated Voice Call and SMS placed to ${nameToSend} (${phoneToSend}). Campus Dispatcher alerted.`,
+        `Emergency SOS Dispatched! Automated Voice Call, SMS, and Email alert placed to ${nameToSend} (${phoneToSend}). Campus Dispatcher notified.`,
         { icon: '🚨', duration: 7000 }
       )
     } catch (err: any) {
@@ -189,12 +189,6 @@ export const GlobalSosModal: React.FC<GlobalSosModalProps> = ({ isOpen, onClose 
       setIsSubmitting(false)
     }
   }
-
-  const handleToggleMute = () => {
-    setIsMuted(!isMuted)
-    sosAlarmPlayer.stop()
-  }
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in">
       <div className="bg-white rounded-3xl shadow-2xl border border-rose-200 w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
@@ -273,10 +267,10 @@ export const GlobalSosModal: React.FC<GlobalSosModalProps> = ({ isOpen, onClose 
                 <div className="flex items-center justify-between text-xs text-rose-950 bg-white/80 p-2.5 rounded-xl border border-rose-200">
                   <span className="flex items-center gap-2 font-bold">
                     <ShieldAlert size={15} className="text-rose-600 animate-pulse" />
-                    Campus Dispatcher Alarm:
+                    Dispatch Emergency Alarm:
                   </span>
                   <span className="font-semibold text-rose-700 bg-rose-100 px-2 py-0.5 rounded text-[11px]">
-                    Ringing at Dispatch Control
+                    Alerting Campus Dispatch
                   </span>
                 </div>
 
@@ -309,7 +303,7 @@ export const GlobalSosModal: React.FC<GlobalSosModalProps> = ({ isOpen, onClose 
               <ul className="list-disc pl-4 space-y-1 text-amber-800">
                 <li>Automated voice phone call will be placed directly to your Emergency Contact ({displayEmergencyPhone}).</li>
                 <li>Emergency SMS with live GPS coordinates and Google Maps link will be sent.</li>
-                <li>Audible emergency siren alarm sounds at Campus Security & Dispatch Control.</li>
+                <li>Audible emergency beacon alarm sounds immediately at Campus Dispatch Control.</li>
                 <li>Telemetry is broadcast to Campus Dispatch Control and authorized responders.</li>
               </ul>
             </div>
@@ -434,9 +428,9 @@ export const GlobalSosModal: React.FC<GlobalSosModalProps> = ({ isOpen, onClose 
 
         {/* Modal Actions */}
         <div className="p-5 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-slate-600 text-xs font-semibold">
-            <ShieldAlert size={14} className="text-rose-600 animate-pulse" />
-            <span>Campus Security & Dispatch Alerted</span>
+          <div className="flex items-center gap-2 text-xs font-semibold text-slate-500">
+            <ShieldAlert size={15} className="text-rose-600 animate-pulse" />
+            <span className="hidden sm:inline">Campus Safety & Dispatch Connected</span>
           </div>
 
           <div className="flex items-center gap-2">

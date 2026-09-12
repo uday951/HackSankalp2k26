@@ -12,6 +12,7 @@ export const safetyRoutes: FastifyPluginAsync = async (fastify) => {
       lng?: number
       emergencyPhone?: string
       emergencyName?: string
+      emergencyEmail?: string
       forceNew?: boolean
     }
 
@@ -25,7 +26,8 @@ export const safetyRoutes: FastifyPluginAsync = async (fastify) => {
       body.lng,
       body.emergencyPhone,
       body.emergencyName,
-      body.forceNew
+      body.forceNew,
+      body.emergencyEmail
     )
     const isExistingActive = Boolean((event as any)?.isExistingActive)
 

@@ -121,6 +121,12 @@ export interface IRide extends Document {
   originalVehicleId?: string
   originalDriverId?: string
   breakdownLocation?: { lat: number; lng: number; timestamp?: Date }
+  driverName?: string
+  driverPhone?: string
+  driverRating?: number
+  driverAvatar?: string
+  vehicleName?: string
+  vehiclePlate?: string
   date: string
   createdAt: Date
   updatedAt: Date
@@ -131,7 +137,13 @@ const RideSchema = new Schema<IRide>(
     id: { type: String, required: true, unique: true, index: true },
     routeName: { type: String, required: true },
     driverId: { type: String, required: true, index: true },
+    driverName: { type: String },
+    driverPhone: { type: String },
+    driverRating: { type: Number },
+    driverAvatar: { type: String },
     vehicleId: { type: String, required: true },
+    vehicleName: { type: String },
+    vehiclePlate: { type: String },
     recoveryId: { type: String, index: true },
     originalVehicleId: { type: String },
     originalDriverId: { type: String },

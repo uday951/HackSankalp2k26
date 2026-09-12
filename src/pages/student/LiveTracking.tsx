@@ -23,6 +23,7 @@ import CampusMap from '../../components/map/CampusMap'
 import Button from '../../components/ui/Button'
 import Badge from '../../components/ui/Badge'
 import Card from '../../components/ui/Card'
+import { resolveDriverInfo } from '../../utils/driverDirectory'
 import Avatar from '../../components/ui/Avatar'
 
 export default function LiveTracking() {
@@ -126,21 +127,30 @@ export default function LiveTracking() {
 
   const effectiveRide = tripState?.ride ? { ...activeRide, ...tripState.ride } : activeRide
 
+  const driverInfo = resolveDriverInfo(effectiveRide?.driverId, (effectiveRide as any)?.driverName, drivers)
+  const matchedDriver = effectiveRide ? drivers.find((d) => d.id === effectiveRide.driverId) : undefined
   const driver =
     tripState?.driver ||
-    (effectiveRide ? drivers.find((d) => d.id === effectiveRide.driverId) : undefined) ||
-    (effectiveRide?.driverId
-      ? {
-          id: effectiveRide.driverId,
-          name: (effectiveRide as any).driverName || 'Campus Driver',
-          phone: (effectiveRide as any).driverPhone || '+91 98765 43210',
-          rating: 4.9,
-        }
-      : undefined)
+    matchedDriver || {
+      id: effectiveRide?.driverId || driverInfo.id,
+      name: (effectiveRide as any)?.driverName && !(effectiveRide as any).driverName.toLowerCase().includes('campus driver')
+        ? (effectiveRide as any).driverName
+        : driverInfo.name,
+      phone: (effectiveRide as any)?.driverPhone || driverInfo.phone,
+      rating: (effectiveRide as any)?.driverRating || driverInfo.rating,
+      totalTrips: driverInfo.totalTrips,
+      avatar: (effectiveRide as any)?.driverAvatar || driverInfo.avatar,
+    }
 
+  const matchedVehicle = effectiveRide ? vehicles.find((v) => v.id === effectiveRide.vehicleId) : undefined
   const vehicle =
     tripState?.vehicle ||
-    (effectiveRide ? vehicles.find((v) => v.id === effectiveRide.vehicleId) : undefined)
+    matchedVehicle || {
+      id: effectiveRide?.vehicleId || driverInfo.vehicleId,
+      name: (effectiveRide as any)?.vehicleName || driverInfo.vehicleName,
+      registration: (effectiveRide as any)?.vehiclePlate || driverInfo.vehicleRegistration,
+      vehicleType: driverInfo.vehicleType,
+    }
 
   const progress = tripState?.progress
   const currentStop = tripState?.currentStop
@@ -371,6 +381,8 @@ export default function LiveTracking() {
           interactive
           alertMode={progress?.isOffRoute || effectiveRide.hasDeviation}
           showRecenterButton={isRecenterNeeded}
+          rideBookedSeats={effectiveRide.bookedSeats}
+          rideCapacity={effectiveRide.capacity}
         />
       </div>
 
@@ -397,7 +409,13 @@ export default function LiveTracking() {
           <div className="bg-slate-50 p-3 rounded-xl border border-slate-200/80 space-y-2">
             <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center justify-between">
               <span>Your Trip Route</span>
-              <span className="text-primary-700 font-semibold">{effectiveRide.routeName || `${myPickup} → ${myDestination}`}</span>
+              <span className="text-primary-700 font-semibold">
+                {myPickup && myDestination && myPickup.toLowerCase() !== myDestination.toLowerCase()
+                  ? `${myPickup} → ${myDestination}`
+                  : effectiveRide.routeName && !effectiveRide.routeName.includes('→')
+                    ? effectiveRide.routeName
+                    : `${myPickup} → SRI INDU College`}
+              </span>
             </div>
 
             <div className="grid grid-cols-3 gap-2 relative">

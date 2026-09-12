@@ -7,7 +7,7 @@ import { notificationService } from '../services/notificationService.js'
 
 export const rideRequestRoutes: FastifyPluginAsync = async (fastify) => {
   // Create ride request and evaluate matches
-  fastify.post('/', async (request) => {
+  fastify.post('/', async (request, reply) => {
     const body = request.body as {
       userId?: string
       pickup: string | { name: string; address?: string; latitude?: number; longitude?: number }
@@ -43,6 +43,10 @@ export const rideRequestRoutes: FastifyPluginAsync = async (fastify) => {
     let dLng = typeof body.destination === 'object' && body.destination.longitude
       ? body.destination.longitude
       : body.destinationLng ?? 78.6015
+
+    if (pName && dName && pName.trim().toLowerCase() === dName.trim().toLowerCase()) {
+      return reply.status(400).send({ success: false, error: { message: 'Pickup and destination cannot be the same location.' } })
+    }
 
     const seatsRequested = body.seats || 1
     const reqId = `req-${Date.now().toString().slice(-6)}`

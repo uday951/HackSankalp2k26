@@ -14,6 +14,7 @@ import CampusMap from '../../components/map/CampusMap'
 import { getRideStatusBadge, getRideStatusLabel } from '../../lib/utils'
 import { api } from '../../services/api'
 import { Ride, FareBreakdown } from '../../types'
+import { resolveDriverInfo } from '../../utils/driverDirectory'
 import toast from 'react-hot-toast'
 
 export default function RideDetail() {
@@ -135,18 +136,25 @@ export default function RideDetail() {
     )
   }
 
-  const driver =
-    drivers.find((d) => d.id === ride.driverId) ||
-    (ride.driverId
-      ? {
-          id: ride.driverId,
-          name: (ride as any).driverName || 'Campus Driver',
-          phone: (ride as any).driverPhone || '+91 98765 43210',
-          rating: 4.9,
-          totalTrips: 150,
-        }
-      : undefined)
-  const vehicle = vehicles.find((v) => v.id === ride.vehicleId)
+  const driverInfo = resolveDriverInfo(ride.driverId, (ride as any).driverName, drivers)
+  const matchedDriver = drivers.find((d) => d.id === ride.driverId)
+  const driver = matchedDriver || {
+    id: ride.driverId || driverInfo.id,
+    name: (ride as any).driverName && !(ride as any).driverName.toLowerCase().includes('campus driver')
+      ? (ride as any).driverName
+      : driverInfo.name,
+    phone: (ride as any).driverPhone || driverInfo.phone,
+    rating: (ride as any).driverRating || driverInfo.rating,
+    totalTrips: driverInfo.totalTrips,
+    avatar: (ride as any).driverAvatar || driverInfo.avatar,
+  }
+  const matchedVehicle = vehicles.find((v) => v.id === ride.vehicleId)
+  const vehicle = matchedVehicle || {
+    id: ride.vehicleId || driverInfo.vehicleId,
+    name: (ride as any).vehicleName || driverInfo.vehicleName,
+    registration: (ride as any).vehiclePlate || driverInfo.vehicleRegistration,
+    type: driverInfo.vehicleType,
+  }
   const isFull = ride.bookedSeats >= ride.capacity
   const availableSeats = ride.capacity - ride.bookedSeats
 
@@ -277,6 +285,8 @@ export default function RideDetail() {
           vehicleLat={ride.currentLat}
           vehicleLng={ride.currentLng}
           height="h-52"
+          rideBookedSeats={ride.bookedSeats}
+          rideCapacity={ride.capacity}
         />
       </div>
 

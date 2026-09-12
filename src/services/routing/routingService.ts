@@ -14,13 +14,17 @@ import type {
 
 // Centralized campus locations with accurate coordinates
 export const CAMPUS_LOCATIONS: Record<string, Coordinate & { name: string; zone: string }> = {
-  'Hostel A': { name: 'Hostel A', lat: 17.398, lng: 78.479, zone: 'North Residential' },
-  'Hostel B': { name: 'Hostel B', lat: 17.396, lng: 78.481, zone: 'North Residential' },
-  'Hostel C': { name: 'Hostel C', lat: 17.395, lng: 78.484, zone: 'East Residential' },
+  'Sri Indu Boys Hostel': { name: 'Sri Indu Boys Hostel', lat: 17.398, lng: 78.479, zone: 'North Residential' },
+  'Sri Indu Girls Hostel': { name: 'Sri Indu Girls Hostel', lat: 17.396, lng: 78.481, zone: 'North Residential' },
+  'Campus Transit Terminal': { name: 'Campus Transit Terminal', lat: 17.395, lng: 78.484, zone: 'East Residential' },
+  'Sri Indu College Main Gate': { name: 'Sri Indu College Main Gate', lat: 17.392, lng: 78.482, zone: 'Campus Entry' },
+  'Hostel A': { name: 'Sri Indu Boys Hostel', lat: 17.398, lng: 78.479, zone: 'North Residential' },
+  'Hostel B': { name: 'Sri Indu Girls Hostel', lat: 17.396, lng: 78.481, zone: 'North Residential' },
+  'Hostel C': { name: 'Campus Transit Terminal', lat: 17.395, lng: 78.484, zone: 'East Residential' },
   'PG Zone': { name: 'PG Zone', lat: 17.394, lng: 78.476, zone: 'West Residential' },
   'Railway Station': { name: 'Railway Station', lat: 17.4, lng: 78.485, zone: 'Transit Hub' },
   'Metro Station': { name: 'Metro Station', lat: 17.397, lng: 78.49, zone: 'Transit Hub' },
-  'Main Gate': { name: 'Main Gate', lat: 17.392, lng: 78.482, zone: 'Campus Entry' },
+  'Main Gate': { name: 'Sri Indu College Main Gate', lat: 17.392, lng: 78.482, zone: 'Campus Entry' },
   'Main Campus': { name: 'Main Campus', lat: 17.387, lng: 78.486, zone: 'Academic South' },
   'Engineering Block': { name: 'Engineering Block', lat: 17.386, lng: 78.487, zone: 'Academic South' },
   Library: { name: 'Library', lat: 17.3865, lng: 78.4855, zone: 'Academic Core' },

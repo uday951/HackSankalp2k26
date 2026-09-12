@@ -19,13 +19,71 @@ export const rideRoutes: FastifyPluginAsync = async (fastify) => {
     const filter: any = {}
     if (query.status && query.status !== 'all') {
       filter.status = query.status.toLowerCase()
+    } else if (!query.status) {
+      // Default: exclude completed rides from the browse/available list
+      filter.status = { $ne: 'completed' }
     }
     if (query.date) {
       filter.date = query.date
     }
 
     const rides = await RideModel.find(filter).sort({ createdAt: -1 })
-    return { success: true, data: rides }
+    const driverIds = [...new Set(rides.map((r) => r.driverId).filter(Boolean))]
+    const vehicleIds = [...new Set(rides.map((r) => r.vehicleId).filter(Boolean))]
+    const [drivers, vehicles] = await Promise.all([
+      UserModel.find({ id: { $in: driverIds } }),
+      VehicleModel.find({ id: { $in: vehicleIds } }),
+    ])
+    const driverMap = new Map(drivers.map((d) => [d.id, d]))
+    const vehicleMap = new Map(vehicles.map((v) => [v.id, v]))
+
+    const hydrated = rides.map((r) => {
+      const rObj = r.toObject ? r.toObject() : { ...r }
+      const driver = driverMap.get(r.driverId)
+      const vehicle = vehicleMap.get(r.vehicleId)
+      return {
+        ...rObj,
+        driverName: driver?.name || r.driverName || 'Rahul Kumar',
+        driverPhone: driver?.phone || r.driverPhone || '+91 99887 76655',
+        driverRating: driver?.rating || r.driverRating || 4.8,
+        driverAvatar: driver?.avatar || (driver?.name ? driver.name.slice(0, 2).toUpperCase() : 'RK'),
+        vehicleName: vehicle?.name || r.vehicleName || 'Campus Shuttle Bus 01 (V1)',
+        vehiclePlate: vehicle?.registrationNumber || r.vehiclePlate || 'TS 09 AB 1234',
+      }
+    })
+    return { success: true, data: hydrated }
+  })
+
+  // Get active trips across the campus
+  fastify.get('/active', async () => {
+    const activeTrips = await RideModel.find({
+      status: { $in: ['waiting', 'boarding', 'active'] },
+    }).sort({ createdAt: -1 })
+
+    const driverIds = [...new Set(activeTrips.map((r) => r.driverId).filter(Boolean))]
+    const vehicleIds = [...new Set(activeTrips.map((r) => r.vehicleId).filter(Boolean))]
+    const [drivers, vehicles] = await Promise.all([
+      UserModel.find({ id: { $in: driverIds } }),
+      VehicleModel.find({ id: { $in: vehicleIds } }),
+    ])
+    const driverMap = new Map(drivers.map((d) => [d.id, d]))
+    const vehicleMap = new Map(vehicles.map((v) => [v.id, v]))
+
+    const hydrated = activeTrips.map((r) => {
+      const rObj = r.toObject ? r.toObject() : { ...r }
+      const driver = driverMap.get(r.driverId)
+      const vehicle = vehicleMap.get(r.vehicleId)
+      return {
+        ...rObj,
+        driverName: driver?.name || r.driverName || 'Rahul Kumar',
+        driverPhone: driver?.phone || r.driverPhone || '+91 99887 76655',
+        driverRating: driver?.rating || r.driverRating || 4.8,
+        driverAvatar: driver?.avatar || (driver?.name ? driver.name.slice(0, 2).toUpperCase() : 'RK'),
+        vehicleName: vehicle?.name || r.vehicleName || 'Campus Shuttle Bus 01 (V1)',
+        vehiclePlate: vehicle?.registrationNumber || r.vehiclePlate || 'TS 09 AB 1234',
+      }
+    })
+    return { success: true, data: hydrated }
   })
 
   // Get single ride
@@ -35,7 +93,23 @@ export const rideRoutes: FastifyPluginAsync = async (fastify) => {
     if (!ride) {
       return reply.status(404).send({ success: false, error: { message: 'Ride not found' } })
     }
-    return { success: true, data: ride }
+    const [driver, vehicle] = await Promise.all([
+      UserModel.findOne({ id: ride.driverId }),
+      VehicleModel.findOne({ id: ride.vehicleId }),
+    ])
+    const rObj = ride.toObject ? ride.toObject() : { ...ride }
+    return {
+      success: true,
+      data: {
+        ...rObj,
+        driverName: driver?.name || ride.driverName || 'Rahul Kumar',
+        driverPhone: driver?.phone || ride.driverPhone || '+91 99887 76655',
+        driverRating: driver?.rating || ride.driverRating || 4.8,
+        driverAvatar: driver?.avatar || (driver?.name ? driver.name.slice(0, 2).toUpperCase() : 'RK'),
+        vehicleName: vehicle?.name || ride.vehicleName || 'Campus Shuttle Bus 01 (V1)',
+        vehiclePlate: vehicle?.registrationNumber || ride.vehiclePlate || 'TS 09 AB 1234',
+      },
+    }
   })
 
   // Get live authoritative trip state (Sections 39, 74, 75)
@@ -193,8 +267,13 @@ export const rideRoutes: FastifyPluginAsync = async (fastify) => {
 
 
   // Create new ride
-  fastify.post('/', async (request) => {
+  fastify.post('/', async (request, reply) => {
     const body = request.body as any
+    const startLoc = (body.startLocation || body.pickupPoints?.[0]?.name || '').trim().toLowerCase()
+    const destLoc = (body.destination || '').trim().toLowerCase()
+    if (startLoc && destLoc && startLoc === destLoc) {
+      return reply.status(400).send({ success: false, error: { message: 'Pickup and destination cannot be the same location.' } })
+    }
     const rideId = body.id || `ride-${Date.now().toString().slice(-4)}`
 
     // Generate initial OSRM route if coordinates exist
@@ -212,11 +291,72 @@ export const rideRoutes: FastifyPluginAsync = async (fastify) => {
     const startLat = typeof body.startLocationLat === 'number' ? body.startLocationLat : (body.pickupPoints?.[0]?.lat ?? body.currentLat ?? 17.3616)
     const startLng = typeof body.startLocationLng === 'number' ? body.startLocationLng : (body.pickupPoints?.[0]?.lng ?? body.currentLng ?? 78.4747)
 
+    // Fair & Real Driver Assignment:
+    // Dynamically assign an available real driver across the fleet instead of defaulting to d1
+    let assignedDriverId = body.driverId
+    let assignedDriverName = body.driverName
+    let assignedDriverPhone = body.driverPhone
+    let assignedDriverRating = body.driverRating || 4.8
+    let assignedDriverAvatar = body.driverAvatar
+    let assignedVehicleId = body.vehicleId
+    let assignedVehicleName = body.vehicleName
+    let assignedVehiclePlate = body.vehiclePlate
+
+    const allDrivers = await UserModel.find({ role: 'DRIVER' })
+    if (allDrivers.length > 0) {
+      if (!assignedDriverId || (assignedDriverId === 'd1' && !body.driverId)) {
+        // Query active rides to find which drivers currently have active/boarding/waiting trips
+        const activeRides = await RideModel.find({ status: { $in: ['active', 'boarding', 'waiting'] } })
+        const busyDriverIds = new Set(activeRides.map((r) => r.driverId))
+
+        // Find available drivers who do not currently have an active ride
+        const availableDrivers = allDrivers.filter((d) => !busyDriverIds.has(d.id))
+        const chosenDriver = availableDrivers.length > 0
+          ? availableDrivers[Math.floor(Math.random() * availableDrivers.length)]
+          : allDrivers[Math.floor(Math.random() * allDrivers.length)]
+
+        assignedDriverId = chosenDriver.id
+        assignedDriverName = chosenDriver.name
+        assignedDriverPhone = chosenDriver.phone
+        assignedDriverRating = chosenDriver.rating || 4.8
+        assignedDriverAvatar = chosenDriver.avatar || (chosenDriver.name ? chosenDriver.name.slice(0, 2).toUpperCase() : 'DR')
+
+        const driverVehicle = await VehicleModel.findOne({ driverId: chosenDriver.id })
+        if (driverVehicle) {
+          assignedVehicleId = driverVehicle.id
+          assignedVehicleName = driverVehicle.name
+          assignedVehiclePlate = driverVehicle.registrationNumber
+        }
+      } else if (assignedDriverId) {
+        const dUser = await UserModel.findOne({ id: assignedDriverId })
+        if (dUser) {
+          assignedDriverName = dUser.name
+          assignedDriverPhone = dUser.phone
+          assignedDriverRating = dUser.rating || 4.8
+          assignedDriverAvatar = dUser.avatar || (dUser.name ? dUser.name.slice(0, 2).toUpperCase() : 'DR')
+        }
+        if (!assignedVehicleId) {
+          const vUser = await VehicleModel.findOne({ driverId: assignedDriverId })
+          if (vUser) {
+            assignedVehicleId = vUser.id
+            assignedVehicleName = vUser.name
+            assignedVehiclePlate = vUser.registrationNumber
+          }
+        }
+      }
+    }
+
     const newRide = await RideModel.create({
       id: rideId,
       routeName: body.routeName || `Campus Route #${rideId}`,
-      driverId: body.driverId || 'd1',
-      vehicleId: body.vehicleId || 'v1',
+      driverId: assignedDriverId || 'd1',
+      driverName: assignedDriverName || 'Rahul Kumar',
+      driverPhone: assignedDriverPhone || '+91 99887 76655',
+      driverRating: assignedDriverRating || 4.8,
+      driverAvatar: assignedDriverAvatar || 'RK',
+      vehicleId: assignedVehicleId || 'v1',
+      vehicleName: assignedVehicleName || 'Campus Shuttle Bus 01 (V1)',
+      vehiclePlate: assignedVehiclePlate || 'TS 09 AB 1234',
       startLocation: startLocationName,
       startLocationLat: startLat,
       startLocationLng: startLng,
@@ -278,6 +418,12 @@ export const rideRoutes: FastifyPluginAsync = async (fastify) => {
 
     const requestedSeats = body.seats || 1
     const studentId = body.studentId || (request.headers['x-user-id'] as string) || 's1'
+
+    const pLoc = (body.pickupName || body.pickup || '').trim().toLowerCase()
+    const dLoc = (body.destinationName || body.destination || '').trim().toLowerCase()
+    if (pLoc && dLoc && pLoc === dLoc) {
+      return reply.status(400).send({ success: false, error: { message: 'Pickup and destination cannot be the same location.' } })
+    }
 
     // Fetch student info
     const student = await UserModel.findOne({ id: studentId })

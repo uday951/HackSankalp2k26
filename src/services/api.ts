@@ -104,15 +104,37 @@ class ApiClient {
       reqOptions.body = JSON.stringify({})
     }
 
-    const res = await fetch(url, reqOptions)
-    const json = await res.json()
+    let res: Response
+    try {
+      res = await fetch(url, reqOptions)
+    } catch (networkErr: any) {
+      const error = new Error('Cannot connect to backend server. Please ensure the server is running on port 5000.') as any
+      error.code = 'NETWORK_ERROR'
+      error.original = networkErr
+      throw error
+    }
+
+    let json: any = null
+    const text = await res.text()
+    if (text && text.trim().length > 0) {
+      try {
+        json = JSON.parse(text)
+      } catch {
+        json = { error: { message: text } }
+      }
+    } else {
+      json = {}
+    }
 
     if (!res.ok || json.success === false) {
+      if (res.status === 502 || res.status === 504 || res.status === 503) {
+        throw new Error(`Backend server unavailable (HTTP ${res.status}). Please run 'npm run server' in root.`)
+      }
       const messageFromDetail =
         typeof json.error === 'string'
           ? (json.message || json.error)
           : json.error?.message || json.message
-      const errorMsg = messageFromDetail || (res.statusText ? `API Error: ${res.statusText}` : 'API Error')
+      const errorMsg = messageFromDetail || (res.statusText ? `API Error: ${res.statusText}` : `API Error (${res.status})`)
       const error = new Error(errorMsg) as any
       error.code = json.error?.code || (typeof json.error === 'string' ? json.error : 'API_ERROR')
       error.status = res.status
@@ -343,6 +365,20 @@ class ApiClient {
   }
 
 
+  private cleanRideName(name?: string): string {
+    if (!name) return 'Campus Shuttle'
+    let clean = name.replace(/\s*\[?hackathon[^\]]*\]?/gi, '').trim()
+    clean = clean
+      .replace(/Hostel A/g, 'Sri Indu Boys Hostel')
+      .replace(/Hostel B/g, 'Sri Indu Girls Hostel')
+      .replace(/Hostel C/g, 'Campus Transit Terminal')
+    const arrowParts = clean.split('→').map((s) => s.trim())
+    if (arrowParts.length === 2 && arrowParts[0].toLowerCase() === arrowParts[1].toLowerCase()) {
+      clean = `${arrowParts[0]} → SRI INDU College`
+    }
+    return clean || 'Campus Shuttle'
+  }
+
   // --- Rides ---
   async getRides(query?: { status?: string; date?: string }): Promise<Ride[]> {
     const params = new URLSearchParams()
@@ -352,7 +388,7 @@ class ApiClient {
     const rides = await this.request<Ride[]>(`/rides${qs}`)
     return (rides || []).map((r) => ({
       ...r,
-      routeName: r.routeName ? r.routeName.replace(/\s*\[?hackathon[^\]]*\]?/gi, '').trim() : r.routeName,
+      routeName: this.cleanRideName(r.routeName),
     }))
   }
 
@@ -361,8 +397,53 @@ class ApiClient {
     if (!r) return r
     return {
       ...r,
-      routeName: r.routeName ? r.routeName.replace(/\s*\[?hackathon[^\]]*\]?/gi, '').trim() : r.routeName,
+      routeName: this.cleanRideName(r.routeName),
     }
+  }
+
+  async createBooking(data: {
+    studentId: string
+    pickup: string
+    pickupName?: string
+    pickupAddress?: string
+    pickupCoords?: { lat: number; lng: number }
+    destination: string
+    destinationName?: string
+    destinationAddress?: string
+    destinationCoords?: { lat: number; lng: number }
+    time?: string
+    seats?: number
+    genderPreference?: string
+  }): Promise<{
+    booking: Booking
+    trip: Ride
+    matchingType: 'JOINED_EXISTING_TRIP' | 'NEW_TRIP' | 'QUEUED_FOR_DISPATCH'
+    driver?: any
+    vehicle?: any
+    metrics?: any
+  }> {
+    return this.request<any>('/bookings', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async getCurrentTripForDriver(driverId?: string): Promise<Ride | null> {
+    const query = driverId ? `?driverId=${encodeURIComponent(driverId)}` : ''
+    const res = await this.request<any>(`/driver/current-trip${query}`)
+    if (!res) return null
+    return {
+      ...res,
+      routeName: this.cleanRideName(res.routeName),
+    }
+  }
+
+  async getActiveTrips(): Promise<Ride[]> {
+    const res = await this.request<Ride[]>('/rides/active')
+    return (res || []).map((r) => ({
+      ...r,
+      routeName: this.cleanRideName(r.routeName),
+    }))
   }
 
   async createRide(data: any): Promise<Ride> {

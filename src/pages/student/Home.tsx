@@ -256,6 +256,11 @@ export default function Home() {
       setErrors((prev) => ({ ...prev, destination: 'Please select a destination.' }))
       return
     }
+    if (pickupPlace.name.trim().toLowerCase() === destinationPlace.name.trim().toLowerCase()) {
+      setErrors((prev) => ({ ...prev, destination: 'Pickup and destination cannot be the same location.' }))
+      toast.error('Pickup and destination cannot be the same location.')
+      return
+    }
 
     const params = new URLSearchParams({
       pickup: pickupPlace.name,
@@ -288,51 +293,81 @@ export default function Home() {
       </div>
 
       {/* Small Contextual Active Trip Shortcut */}
-      {userActiveRide && (
-        <div
-          onClick={() => navigate(`/student/live?rideId=${userActiveRide.id}`)}
-          className="bg-gradient-to-r from-emerald-600 to-teal-700 text-white px-4 py-3 rounded-xl flex items-center justify-between shadow-md cursor-pointer hover:from-emerald-700 hover:to-teal-800 transition-all group"
-        >
-          <div className="flex items-center gap-2.5 min-w-0">
-            <span className="relative flex h-2.5 w-2.5 shrink-0">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-300 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-white"></span>
-            </span>
-            <div className="truncate text-xs">
-              <p className="font-bold truncate text-sm">Active Ride: {userActiveRide.routeName}</p>
-              <p className="text-[11px] text-emerald-100 truncate">
-                In Transit · Destination: {userActiveRide.destination}
-              </p>
+      {userActiveRide && (() => {
+        const userBooking = bookings.find(
+          (b) => b.studentId === currentStudentId && b.rideId === userActiveRide.id && b.status === 'confirmed'
+        )
+        const userPassenger = userActiveRide.passengers?.find(
+          (p) => p.studentId === currentStudentId && (p.status === 'boarded' || p.status === 'waiting')
+        )
+        const pName = userBooking?.pickup || userPassenger?.pickup || userActiveRide.pickupPoints?.[0]?.name || userActiveRide.startLocation || 'Pickup'
+        const dName = userBooking?.destination || userPassenger?.destination || userActiveRide.destination || 'SRI INDU College'
+        const isSame = pName.trim().toLowerCase() === dName.trim().toLowerCase()
+        const displayRoute = !isSame
+          ? `${pName} → ${dName}`
+          : `${pName} → SRI INDU College`
+
+        return (
+          <div
+            onClick={() => navigate(`/student/live?rideId=${userActiveRide.id}`)}
+            className="bg-gradient-to-r from-emerald-600 to-teal-700 text-white px-4 py-3 rounded-xl flex items-center justify-between shadow-md cursor-pointer hover:from-emerald-700 hover:to-teal-800 transition-all group"
+          >
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span className="relative flex h-2.5 w-2.5 shrink-0">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-300 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-white"></span>
+              </span>
+              <div className="truncate text-xs">
+                <p className="font-bold truncate text-sm">Active Ride: {displayRoute}</p>
+                <p className="text-[11px] text-emerald-100 truncate">
+                  In Transit · Destination: {!isSame ? dName : 'SRI INDU College'}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-1 bg-white/20 group-hover:bg-white/30 px-3 py-1.5 rounded-lg text-xs font-bold text-white shrink-0 ml-2 transition-colors">
+              <span>Track Ride</span>
+              <ChevronRight size={14} />
             </div>
           </div>
-          <div className="flex items-center gap-1 bg-white/20 group-hover:bg-white/30 px-3 py-1.5 rounded-lg text-xs font-bold text-white shrink-0 ml-2 transition-colors">
-            <span>Track Ride</span>
-            <ChevronRight size={14} />
-          </div>
-        </div>
-      )}
+        )
+      })()}
 
       {/* Upcoming Scheduled Ride Shortcut */}
-      {userUpcomingRide && (
-        <div
-          onClick={() => navigate(`/student/ride/${userUpcomingRide.id}`)}
-          className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-4 py-3 rounded-xl flex items-center justify-between shadow-md cursor-pointer hover:from-blue-700 hover:to-indigo-700 transition-all group"
-        >
-          <div className="flex items-center gap-2.5 min-w-0">
-            <Clock size={16} className="text-blue-200 shrink-0" />
-            <div className="truncate text-xs">
-              <p className="font-bold truncate text-sm">Upcoming Trip: {userUpcomingRide.routeName}</p>
-              <p className="text-[11px] text-blue-100 truncate">
-                Scheduled · Departs {userUpcomingRide.departureTime} · {userUpcomingRide.destination}
-              </p>
+      {userUpcomingRide && (() => {
+        const userBooking = bookings.find(
+          (b) => b.studentId === currentStudentId && b.rideId === userUpcomingRide.id && b.status === 'confirmed'
+        )
+        const userPassenger = userUpcomingRide.passengers?.find(
+          (p) => p.studentId === currentStudentId && p.status === 'waiting'
+        )
+        const pName = userBooking?.pickup || userPassenger?.pickup || userUpcomingRide.pickupPoints?.[0]?.name || userUpcomingRide.startLocation || 'Pickup'
+        const dName = userBooking?.destination || userPassenger?.destination || userUpcomingRide.destination || 'SRI INDU College'
+        const isSame = pName.trim().toLowerCase() === dName.trim().toLowerCase()
+        const displayRoute = !isSame
+          ? `${pName} → ${dName}`
+          : `${pName} → SRI INDU College`
+
+        return (
+          <div
+            onClick={() => navigate(`/student/ride/${userUpcomingRide.id}`)}
+            className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-4 py-3 rounded-xl flex items-center justify-between shadow-md cursor-pointer hover:from-blue-700 hover:to-indigo-700 transition-all group"
+          >
+            <div className="flex items-center gap-2.5 min-w-0">
+              <Clock size={16} className="text-blue-200 shrink-0" />
+              <div className="truncate text-xs">
+                <p className="font-bold truncate text-sm">Upcoming Trip: {displayRoute}</p>
+                <p className="text-[11px] text-blue-100 truncate">
+                  Scheduled · Departs {userUpcomingRide.departureTime} · {!isSame ? dName : 'SRI INDU College'}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-1 bg-white/20 group-hover:bg-white/30 px-3 py-1.5 rounded-lg text-xs font-bold text-white shrink-0 ml-2 transition-colors">
+              <span>View Details</span>
+              <ChevronRight size={14} />
             </div>
           </div>
-          <div className="flex items-center gap-1 bg-white/20 group-hover:bg-white/30 px-3 py-1.5 rounded-lg text-xs font-bold text-white shrink-0 ml-2 transition-colors">
-            <span>View Details</span>
-            <ChevronRight size={14} />
-          </div>
-        </div>
-      )}
+        )
+      })()}
 
       {/* ---------------------------------------------------------------- */}
       {/* Booking Card — shown FIRST, map moved below                      */}

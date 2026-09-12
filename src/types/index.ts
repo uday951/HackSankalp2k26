@@ -241,6 +241,12 @@ export interface Ride {
   originalVehicleId?: string
   originalDriverId?: string
   breakdownLocation?: { lat: number; lng: number }
+  driverName?: string
+  driverPhone?: string
+  driverRating?: number
+  driverAvatar?: string
+  vehicleName?: string
+  vehiclePlate?: string
 }
 
 export interface Booking {
@@ -315,6 +321,7 @@ export interface SafetyEvent {
     name: string
     relationship?: string
     phone: string
+    email?: string
   }
   acknowledgedAt?: string
   acknowledgedBy?: string
@@ -323,6 +330,8 @@ export interface SafetyEvent {
   callStatus?: string
   callSid?: string
   callMessage?: string
+  emailStatus?: string
+  emailMessage?: string
   lat?: number
   lng?: number
   status?: 'ACTIVE' | 'ACKNOWLEDGED' | 'RESOLVED' | string
@@ -341,6 +350,7 @@ export interface EmergencyContact {
   name: string
   relationship: string
   phone: string
+  email?: string
   isPrimary?: boolean
 }
 

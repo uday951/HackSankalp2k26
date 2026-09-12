@@ -10,6 +10,7 @@ import Card from '../../components/ui/Card'
 import Button from '../../components/ui/Button'
 import Badge from '../../components/ui/Badge'
 import SeatProgress from '../../components/ui/SeatProgress'
+import { resolveDriverInfo } from '../../utils/driverDirectory'
 
 export default function BookingConfirmation() {
   const { id } = useParams<{ id: string }>()
@@ -50,17 +51,18 @@ export default function BookingConfirmation() {
   }, [id, rides.length])
 
   const ride = rides.find((r) => r.id === id)
-  const driver =
-    (ride ? drivers.find((d) => d.id === ride.driverId) : undefined) ||
-    (ride?.driverId
-      ? {
-          id: ride.driverId,
-          name: (ride as any).driverName || 'Campus Driver',
-          phone: (ride as any).driverPhone || '+91 98765 43210',
-          rating: 4.9,
-          totalTrips: 140,
-        }
-      : undefined)
+  const driverInfo = resolveDriverInfo(ride?.driverId, (ride as any)?.driverName, drivers)
+  const matchedDriver = ride ? drivers.find((d) => d.id === ride.driverId) : undefined
+  const driver = matchedDriver || {
+    id: ride?.driverId || driverInfo.id,
+    name: (ride as any)?.driverName && !(ride as any).driverName.toLowerCase().includes('campus driver')
+      ? (ride as any).driverName
+      : driverInfo.name,
+    phone: (ride as any)?.driverPhone || driverInfo.phone,
+    rating: (ride as any)?.driverRating || driverInfo.rating,
+    totalTrips: driverInfo.totalTrips,
+    avatar: (ride as any)?.driverAvatar || driverInfo.avatar,
+  }
   const rideMessages = messages.filter((m) => m.rideId === id)
   const unreadFromDriver = rideMessages.filter((m) => m.fromRole === 'driver' && !m.read).length
 

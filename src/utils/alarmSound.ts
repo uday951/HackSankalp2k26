@@ -1,7 +1,10 @@
 /**
  * Universal Loud SOS Emergency Alarm Audio Controller
- * Plays local project sound /sounds/sos-alarm.mp3 with continuous loop,
- * fallback synthesis buzzer if audio is restricted, and graceful pause/stop.
+ * Plays single-shot emergency beep/alarm on new real-time SOS events specifically for Dispatcher.
+ * - Single-shot audio playback (no continuous loop)
+ * - Event ID deduplication to prevent repeated beeps from re-renders or polling
+ * - Graceful browser autoplay restriction fallback
+ * - Clean pause/stop controls
  */
 
 /**
@@ -38,15 +41,17 @@ export function isDispatcherPortal(): boolean {
 class SosAlarmAudioPlayer {
   private audio: HTMLAudioElement | null = null
   private isPlaying: boolean = false
-  private audioContext: AudioContext | null = null
-  private synthInterval: number | null = null
+  private playedSosEventIds: Set<string> = new Set()
 
   constructor() {
     if (typeof window !== 'undefined') {
       try {
         this.audio = new Audio('/sounds/sos-alarm.mp3')
-        this.audio.loop = true
-        this.audio.preload = 'auto'
+        this.audio.loop = false
+        this.audio.preload = 'none'
+        this.audio.addEventListener('ended', () => {
+          this.isPlaying = false
+        })
       } catch (e) {
         console.warn('[SosAlarm] HTMLAudioElement init error:', e)
       }
@@ -66,66 +71,107 @@ class SosAlarmAudioPlayer {
   }
 
   /**
-   * Start playing the loud emergency alarm sound continuously.
+   * Play emergency alarm sound ONCE for a specific new SOS event ID (Dispatcher only).
+   * Deduplicates by eventId to ensure re-renders and polling never restart the alarm.
+   */
+  public async playOnceForEvent(eventId: string): Promise<boolean> {
+    if (!eventId) return false
+    if (!isDispatcherPortal()) {
+      if (this.isPlaying) this.stop()
+      return false
+    }
+    if (this.playedSosEventIds.has(eventId)) {
+      return false
+    }
+    this.playedSosEventIds.add(eventId)
+    return this.playSingleShot()
+  }
+
+  /**
+   * Plays single-shot emergency alarm (no infinite loop).
    * STRICT ENFORCEMENT: Only permits playback if currently inside the Dispatcher portal.
    */
-  public async play(): Promise<boolean> {
+  public async playSingleShot(): Promise<boolean> {
+    if (typeof window === 'undefined') return false
     if (!isDispatcherPortal()) {
       if (this.isPlaying) this.stop()
       return false
     }
 
-    if (this.isPlaying) return true
-
     if (this.audio) {
       try {
+        this.audio.loop = false
         this.audio.currentTime = 0
-        this.audio.volume = 1.0
-        await this.audio.play()
+        this.audio.volume = 0.9
+        const playPromise = this.audio.play()
+        if (playPromise !== undefined) {
+          await playPromise
+        }
         this.isPlaying = true
-        console.log('[SosAlarm] Playing loud SOS emergency alarm in Dispatcher Portal')
+        console.log('[SosAlarm] Playing single-shot SOS emergency alarm in Dispatcher Portal')
         return true
       } catch (err: any) {
-        console.warn('[SosAlarm] Autoplay restriction or audio failure. Falling back to Web Audio buzzer:', err.message)
-        return this.startFallbackBuzzer()
+        // Browser autoplay restriction or file error — fallback to single-shot Web Audio chirp
+        return this.playSingleFallbackChirp()
       }
     } else {
-      return this.startFallbackBuzzer()
+      return this.playSingleFallbackChirp()
     }
   }
 
   /**
-   * Web Audio API synthesized siren buzzer fallback
+   * Backward-compatible play alias (plays single shot)
    */
-  private startFallbackBuzzer(): boolean {
+  public async play(): Promise<boolean> {
+    return this.playSingleShot()
+  }
+
+  /**
+   * Web Audio API single-shot siren chirp fallback (2 brief pulses, auto-stops in 0.7s)
+   */
+  private playSingleFallbackChirp(): boolean {
     if (typeof window === 'undefined') return false
     try {
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext
       if (!AudioCtx) return false
-      this.audioContext = new AudioCtx()
+      const ctx = new AudioCtx()
+      const now = ctx.currentTime
 
-      const playChirp = () => {
-        if (!this.audioContext) return
-        try {
-          const osc = this.audioContext.createOscillator()
-          const gain = this.audioContext.createGain()
-          osc.type = 'sawtooth'
-          osc.frequency.setValueAtTime(880, this.audioContext.currentTime)
-          osc.frequency.exponentialRampToValueAtTime(440, this.audioContext.currentTime + 0.4)
-          gain.gain.setValueAtTime(0.4, this.audioContext.currentTime)
-          gain.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 0.4)
-          osc.connect(gain)
-          gain.connect(this.audioContext.destination)
-          osc.start()
-          osc.stop(this.audioContext.currentTime + 0.4)
-        } catch {
-          // ignore
-        }
-      }
+      // Pulse 1 (880Hz -> 440Hz, 300ms)
+      const osc1 = ctx.createOscillator()
+      const gain1 = ctx.createGain()
+      osc1.type = 'sawtooth'
+      osc1.frequency.setValueAtTime(880, now)
+      osc1.frequency.exponentialRampToValueAtTime(440, now + 0.3)
+      gain1.gain.setValueAtTime(0.3, now)
+      gain1.gain.exponentialRampToValueAtTime(0.01, now + 0.3)
+      osc1.connect(gain1)
+      gain1.connect(ctx.destination)
+      osc1.start(now)
+      osc1.stop(now + 0.3)
 
-      playChirp()
-      this.synthInterval = window.setInterval(playChirp, 700)
+      // Pulse 2 (880Hz -> 440Hz, 300ms)
+      const osc2 = ctx.createOscillator()
+      const gain2 = ctx.createGain()
+      osc2.type = 'sawtooth'
+      osc2.frequency.setValueAtTime(880, now + 0.35)
+      osc2.frequency.exponentialRampToValueAtTime(440, now + 0.65)
+      gain2.gain.setValueAtTime(0.3, now + 0.35)
+      gain2.gain.exponentialRampToValueAtTime(0.01, now + 0.65)
+      osc2.connect(gain2)
+      gain2.connect(ctx.destination)
+      osc2.start(now + 0.35)
+      osc2.stop(now + 0.65)
+
       this.isPlaying = true
+
+      setTimeout(() => {
+        try {
+          ctx.close()
+        } catch {}
+        this.isPlaying = false
+      }, 800)
+
       return true
     } catch {
       return false
@@ -133,34 +179,16 @@ class SosAlarmAudioPlayer {
   }
 
   /**
-   * Stop alarm immediately and clean up all audio streams and timers
+   * Stop alarm immediately and clean up
    */
   public stop() {
     if (this.audio) {
       try {
         this.audio.pause()
         this.audio.currentTime = 0
-      } catch {
-        // ignore
-      }
+      } catch {}
     }
-
-    if (this.synthInterval) {
-      clearInterval(this.synthInterval)
-      this.synthInterval = null
-    }
-
-    if (this.audioContext) {
-      try {
-        this.audioContext.close()
-      } catch {
-        // ignore
-      }
-      this.audioContext = null
-    }
-
     this.isPlaying = false
-    console.log('[SosAlarm] SOS emergency alarm stopped.')
   }
 
   public getIsPlaying(): boolean {

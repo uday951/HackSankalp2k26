@@ -14,11 +14,11 @@ export const EmergencyAlarmBanner: React.FC = () => {
   const [isMuted, setIsMuted] = useState(false)
   const [acknowledgedIds, setAcknowledgedIds] = useState<Set<string>>(new Set())
 
-  // Strictly check if current view is the Dispatcher Portal
+  // STRICT RULE: Alarm sound & banner ONLY in Dispatcher Portal (/admin or role admin/dispatcher).
+  // Strictly blocked in Student Portal and Driver Portal.
   const isDispatcher =
     role === 'admin' ||
-    currentUser?.role?.toLowerCase() === 'admin' ||
-    currentUser?.role?.toLowerCase() === 'dispatcher' ||
+    (currentUser?.role && (currentUser.role.toLowerCase() === 'dispatcher' || currentUser.role.toLowerCase() === 'admin')) ||
     location.pathname.startsWith('/admin') ||
     isDispatcherPortal()
 
@@ -31,17 +31,21 @@ export const EmergencyAlarmBanner: React.FC = () => {
 
   // Find active, unacknowledged SOS events
   const activeSosEvents = safetyEvents.filter((e) => {
-    const isSos = e.eventType === 'SOS' || e.eventType === 'STUDENT_SOS_TRIGGERED' || e.eventType === 'DRIVER_SOS_TRIGGERED' || (e.type && e.type.includes('SOS'))
+    const isSos =
+      e.eventType === 'SOS' ||
+      e.eventType === 'STUDENT_SOS_TRIGGERED' ||
+      e.eventType === 'DRIVER_SOS_TRIGGERED' ||
+      (e.type && e.type.includes('SOS'))
     const isUnresolved = !e.resolved && e.status !== 'RESOLVED'
     const isLocalAcknowledged = acknowledgedIds.has(e.id)
     return isSos && isUnresolved && !isLocalAcknowledged && e.status !== 'ACKNOWLEDGED'
   })
 
-  const currentSos = activeSosEvents[0]
+  const currentSos = isDispatcher ? activeSosEvents[0] : undefined
 
   useEffect(() => {
     if (isDispatcher && currentSos && !isMuted) {
-      sosAlarmPlayer.play().catch(() => {})
+      sosAlarmPlayer.playOnceForEvent(currentSos.id).catch(() => {})
     } else {
       sosAlarmPlayer.stop()
     }
@@ -51,26 +55,30 @@ export const EmergencyAlarmBanner: React.FC = () => {
     }
   }, [isDispatcher, currentSos, isMuted])
 
-  // If not in dispatcher portal or no active SOS, do not render banner
   if (!isDispatcher || !currentSos) return null
 
   const handleAcknowledge = async () => {
+    if (!currentSos) return
+    const idToAck = currentSos.id
     try {
+      // 1. Instantly silence siren audio
       sosAlarmPlayer.stop()
-      setAcknowledgedIds((prev) => new Set(prev).add(currentSos.id))
-      await acknowledgeSafetyEvent(currentSos.id)
+      // 2. Mark locally so banner and sound immediately stop
+      setAcknowledgedIds((prev) => new Set(prev).add(idToAck))
+      // 3. Persist to backend and update store
+      await acknowledgeSafetyEvent(idToAck)
       toast.success('Emergency SOS Acknowledged. Loud alarm silenced.', { icon: '🛡️' })
     } catch {
       sosAlarmPlayer.stop()
-      setAcknowledgedIds((prev) => new Set(prev).add(currentSos.id))
-      toast('Loud alarm silenced locally.', { icon: '🔕' })
+      setAcknowledgedIds((prev) => new Set(prev).add(idToAck))
+      toast('Loud alarm silenced.', { icon: '🔕' })
     }
   }
 
   const handleToggleMute = () => {
     if (isMuted) {
       setIsMuted(false)
-      sosAlarmPlayer.play().catch(() => {})
+      sosAlarmPlayer.playSingleShot().catch(() => {})
     } else {
       setIsMuted(true)
       sosAlarmPlayer.stop()

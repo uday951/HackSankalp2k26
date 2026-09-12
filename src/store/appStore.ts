@@ -12,6 +12,7 @@ import type {
 } from '../types'
 import { api } from '../services/api'
 import { sosAlarmPlayer } from '../utils/alarmSound'
+import { resolveDriverInfo } from '../utils/driverDirectory'
 
 import { showNotificationToast } from '../components/notifications/NotificationToast'
 
@@ -73,10 +74,44 @@ export function normalizeRide(r: Ride): Ride {
   let cleanName = r.routeName
   if (typeof cleanName === 'string') {
     cleanName = cleanName.replace(/\s*\[?hackathon[^\]]*\]?/gi, '').trim()
+    cleanName = cleanName
+      .replace(/Hostel A/g, 'Sri Indu Boys Hostel')
+      .replace(/Hostel B/g, 'Sri Indu Girls Hostel')
+      .replace(/Hostel C/g, 'Campus Transit Terminal')
+    const arrowParts = cleanName.split('→').map((s) => s.trim())
+    if (arrowParts.length === 2 && arrowParts[0].toLowerCase() === arrowParts[1].toLowerCase()) {
+      cleanName = `${arrowParts[0]} → SRI INDU College`
+    }
   }
+  let cleanDest = r.destination
+  if (typeof cleanDest === 'string') {
+    cleanDest = cleanDest
+      .replace(/Hostel A/g, 'Sri Indu Boys Hostel')
+      .replace(/Hostel B/g, 'Sri Indu Girls Hostel')
+      .replace(/Hostel C/g, 'Campus Transit Terminal')
+  }
+
+  // Resolve real institutional driver & vehicle details
+  const driverInfo = resolveDriverInfo(r.driverId, (r as any).driverName)
+  const resolvedDriverName = (r as any).driverName && !(r as any).driverName.toLowerCase().includes('campus driver')
+    ? (r as any).driverName
+    : driverInfo.name
+  const resolvedDriverPhone = (r as any).driverPhone || driverInfo.phone
+  const resolvedDriverRating = (r as any).driverRating || driverInfo.rating
+  const resolvedDriverAvatar = (r as any).driverAvatar || driverInfo.avatar
+  const resolvedVehicleName = (r as any).vehicleName || driverInfo.vehicleName
+  const resolvedVehiclePlate = (r as any).vehiclePlate || driverInfo.vehicleRegistration
+
   return {
     ...r,
     routeName: cleanName || 'Campus Shuttle',
+    destination: cleanDest || 'SRI INDU College',
+    driverName: resolvedDriverName,
+    driverPhone: resolvedDriverPhone,
+    driverRating: resolvedDriverRating,
+    driverAvatar: resolvedDriverAvatar,
+    vehicleName: resolvedVehicleName,
+    vehiclePlate: resolvedVehiclePlate,
   }
 }
 
@@ -301,9 +336,10 @@ export const useAppStore = create<AppState>((set, get) => ({
               showNotificationToast(notif)
             }
           }
-        } else if ((event === 'RIDE_UPDATED' || event === 'RIDE_CREATED' || event === 'RIDE_STARTED' || event === 'RIDE_COMPLETED' || event === 'RIDE_CANCELLED' || event === 'DRIVER_ACCEPTED' || event === 'DRIVER_REASSIGNED' || event === 'VEHICLE_REASSIGNED' || event === 'ROUTE_UPDATED') && payload?.ride) {
-          const isCompleted = event === 'RIDE_COMPLETED' || payload.ride.status === 'completed'
-          const normRide = normalizeRide(payload.ride)
+        } else if ((event === 'RIDE_UPDATED' || event === 'RIDE_CREATED' || event === 'RIDE_STARTED' || event === 'RIDE_COMPLETED' || event === 'RIDE_CANCELLED' || event === 'DRIVER_ACCEPTED' || event === 'DRIVER_REASSIGNED' || event === 'VEHICLE_REASSIGNED' || event === 'ROUTE_UPDATED' || event === 'TRIP_CREATED' || event === 'TRIP_ROUTE_UPDATED') && (payload?.ride || payload?.trip)) {
+          const rawTrip = payload.ride || payload.trip
+          const isCompleted = event === 'RIDE_COMPLETED' || rawTrip.status === 'completed'
+          const normRide = normalizeRide(rawTrip)
           set((state) => ({
             rides: state.rides.some((r) => r.id === normRide.id)
               ? state.rides.map((r) => (r.id === normRide.id ? { ...r, ...normRide } : r))
@@ -315,6 +351,34 @@ export const useAppStore = create<AppState>((set, get) => ({
                   ),
                 }
               : {}),
+          }))
+        } else if (event === 'PASSENGER_JOINED_TRIP' && payload?.tripId && payload?.passenger) {
+          set((state) => ({
+            rides: state.rides.map((r) => {
+              if (r.id === payload.tripId) {
+                const passengers = r.passengers || []
+                const hasPax = passengers.some((p) => p.studentId === payload.passenger.studentId)
+                return {
+                  ...r,
+                  bookedSeats: payload.bookedSeats ?? r.bookedSeats + 1,
+                  passengers: hasPax ? passengers : [...passengers, payload.passenger],
+                }
+              }
+              return r
+            }),
+          }))
+        } else if (event === 'PASSENGER_REMOVED_FROM_TRIP' && payload?.tripId && payload?.studentId) {
+          set((state) => ({
+            rides: state.rides.map((r) => {
+              if (r.id === payload.tripId) {
+                return {
+                  ...r,
+                  bookedSeats: payload.bookedSeats ?? Math.max(0, r.bookedSeats - 1),
+                  passengers: (r.passengers || []).filter((p) => p.studentId !== payload.studentId),
+                }
+              }
+              return r
+            }),
           }))
         } else if (event === 'BOOKING_CREATED') {
           if (payload?.booking) {
@@ -361,30 +425,58 @@ export const useAppStore = create<AppState>((set, get) => ({
           event === 'DRIVER_SOS_TRIGGERED' ||
           event === 'SOS_TRIGGERED'
         ) {
+          const rawEvent = payload?.safetyEvent || payload?.event || payload
+          const eventStatus = payload?.status || rawEvent?.status
+          const isAckOrResolved =
+            eventStatus === 'ACKNOWLEDGED' ||
+            eventStatus === 'RESOLVED' ||
+            rawEvent?.status === 'ACKNOWLEDGED' ||
+            rawEvent?.status === 'RESOLVED' ||
+            rawEvent?.resolved === true
+
+          if (isAckOrResolved) {
+            sosAlarmPlayer.stop()
+          }
+
           if (payload?.safetyEvent) {
             const normalized = normalizeSafetyEvent(payload.safetyEvent)
             set((state) => ({
               safetyEvents: [normalized, ...state.safetyEvents.filter((e) => e.id !== normalized.id)],
             }))
-            // Immediately play loud emergency siren alarm ONLY in Dispatcher portal
-            const activeRole = get().role
-            const userRole = get().currentUser?.role?.toLowerCase()
+            // Siren alarm must ONLY sound in Dispatcher Portal for a new,
+            // unacknowledged, unresolved SOS event. Never in Student or Driver Portal.
+            const currentRole = (get().role || '').toLowerCase()
+            const currentUserRole = (get().currentUser?.role || '').toLowerCase()
             const isDispatcher =
-              activeRole === 'admin' ||
-              userRole === 'admin' ||
-              userRole === 'dispatcher' ||
+              currentRole === 'admin' ||
+              currentRole === 'dispatcher' ||
+              currentUserRole === 'admin' ||
+              currentUserRole === 'dispatcher' ||
               (typeof window !== 'undefined' &&
-                (window.location.hash.startsWith('#/admin') || window.location.pathname.startsWith('/admin')))
+                (window.location.hash.startsWith('#/admin') ||
+                  window.location.pathname.startsWith('/admin') ||
+                  window.location.pathname.startsWith('/dispatcher')))
 
-            if (isDispatcher) {
-              sosAlarmPlayer.play().catch(() => {})
+            const isUnacknowledgedSos =
+              !isAckOrResolved &&
+              normalized.status !== 'ACKNOWLEDGED' &&
+              normalized.status !== 'RESOLVED' &&
+              !normalized.resolved &&
+              (normalized.eventType === 'SOS' ||
+                normalized.eventType === 'STUDENT_SOS_TRIGGERED' ||
+                normalized.eventType === 'DRIVER_SOS_TRIGGERED' ||
+                (normalized.type && normalized.type.includes('SOS')))
+
+            if (isDispatcher && isUnacknowledgedSos && normalized.id) {
+              // Play only once for this event to prevent duplicate sirens from repeated realtime events.
+              sosAlarmPlayer.playOnceForEvent(normalized.id).catch(() => {})
             } else {
               sosAlarmPlayer.stop()
             }
           }
           if (payload?.ride) {
             set((state) => ({
-              rides: state.rides.map((r) => (r.id === payload.ride.id ? { ...r, ...payload.ride, hasSosAlert: true } : r)),
+              rides: state.rides.map((r) => (r.id === payload.ride.id ? { ...r, ...payload.ride, hasSosAlert: !isAckOrResolved } : r)),
             }))
           }
         } else if (
@@ -824,7 +916,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  // Create Ride
+  // Create Ride (routed through intelligent Trip Grouping & Booking Placement)
   createRide: async (
     pickup: string,
     destination: string,
@@ -840,34 +932,40 @@ export const useAppStore = create<AppState>((set, get) => ({
       const pLng = pickupCoords?.lng || 78.479
       const dLat = destinationCoords?.lat || 17.387
       const dLng = destinationCoords?.lng || 78.486
-      const student = get().students.find((s) => s.id === studentId)
-      const isFemaleOnly = genderPreference === 'FEMALE_ONLY'
-      const newRide = await api.createRide({
-        pickupPoints: [{ id: `pp-${Date.now()}`, name: pickup, lat: pLat, lng: pLng, estimatedPickupTime: time }],
+
+      const response = await api.createBooking({
+        studentId,
+        pickup,
+        pickupName: pickup,
+        pickupCoords: { lat: pLat, lng: pLng },
         destination,
-        destinationLat: dLat,
-        destinationLng: dLng,
-        departureTime: time,
-        bookedSeats: seats,
-        capacity: 6,
-        fare: 25,
-        isFemaleOnly,
-        genderPreference: isFemaleOnly ? 'FEMALE_ONLY' : 'ANYONE',
-        passengers: [{
-          studentId,
-          name: student?.name || 'Student',
-          pickup,
-          destination,
-          status: 'waiting',
-          seatNo: 1,
-          gender: student?.gender || 'Other',
-          genderPreference: isFemaleOnly ? 'FEMALE_ONLY' : 'ANYONE',
-        }],
+        destinationName: destination,
+        destinationCoords: { lat: dLat, lng: dLng },
+        time,
+        seats,
+        genderPreference: genderPreference || 'ANYONE',
       })
-      set((state) => ({
-        rides: [newRide, ...state.rides],
-      }))
-      return newRide
+
+      const normRide = normalizeRide(response.trip)
+      const booking = response.booking
+
+      set((state) => {
+        const rideExists = state.rides.some((r) => r.id === normRide.id)
+        const updatedRides = rideExists
+          ? state.rides.map((r) => (r.id === normRide.id ? { ...r, ...normRide } : r))
+          : [normRide, ...state.rides]
+
+        const updatedBookings = booking
+          ? [booking, ...state.bookings.filter((b) => b.id !== booking.id)]
+          : state.bookings
+
+        return {
+          rides: updatedRides,
+          bookings: updatedBookings,
+        }
+      })
+
+      return normRide
     } catch (err: any) {
       console.error('[Store] createRide error:', err.message)
       throw err
@@ -946,11 +1044,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         fare: 25,
       })
 
+      const normRide = normalizeRide(newRide)
       set((state) => ({
-        rides: [newRide, ...state.rides.filter((r) => r.id !== newRide.id)],
+        rides: [normRide, ...state.rides.filter((r) => r.id !== normRide.id)],
       }))
 
-      return newRide
+      return normRide
     } catch (err: any) {
       console.error('[Store] createAndActivateRide error:', err.message)
       throw err
@@ -1131,7 +1230,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         safetyEvents: state.safetyEvents.map((e) => (e.id === eventId ? { ...e, ...resolvedEvent, resolved: true, status: 'RESOLVED' } : e)),
         auditLogs: (res as any)?.auditLog ? [(res as any).auditLog, ...state.auditLogs] : state.auditLogs,
       }))
+      sosAlarmPlayer.stop()
     } catch (err: any) {
+      sosAlarmPlayer.stop()
       console.error('[Store] resolveSafetyEvent error:', err.message)
       throw err
     }
@@ -1166,11 +1267,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   // Safety Actions
-  triggerSOS: async (params?: { rideId?: string; userId?: string; lat?: number; lng?: number } | string, studentId?: string) => {
+  triggerSOS: async (params?: { rideId?: string; userId?: string; lat?: number; lng?: number; emergencyPhone?: string; emergencyName?: string; emergencyEmail?: string } | string, studentId?: string) => {
     try {
-      // Audio alarm must strictly sound in Dispatcher portal & emergency contact phone, NOT on student/commuter device
+      // NOTE: Siren audio is strictly sounded at Dispatcher Command Center, NOT on user/driver device
       sosAlarmPlayer.stop()
-
       let payload: {
         rideId?: string
         userId?: string
@@ -1178,6 +1278,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         lng?: number
         emergencyPhone?: string
         emergencyName?: string
+        emergencyEmail?: string
       } = {}
 
       if (typeof params === 'string') {
@@ -1241,12 +1342,18 @@ export const useAppStore = create<AppState>((set, get) => ({
   acknowledgeSafetyEvent: async (eventId: string) => {
     try {
       sosAlarmPlayer.stop()
+      // Optimistically mark as ACKNOWLEDGED immediately so all listeners and UI instantly silence
+      set((state) => ({
+        safetyEvents: state.safetyEvents.map((e) => (e.id === eventId ? { ...e, status: 'ACKNOWLEDGED' } : e)),
+      }))
       const res = await api.acknowledgeSafetyEvent(eventId)
       const acknowledged: SafetyEvent = normalizeSafetyEvent((res as any)?.data || (res as any)?.event || res)
       set((state) => ({
         safetyEvents: state.safetyEvents.map((e) => (e.id === eventId ? { ...e, ...acknowledged, status: 'ACKNOWLEDGED' } : e)),
       }))
+      sosAlarmPlayer.stop()
     } catch (err: any) {
+      sosAlarmPlayer.stop()
       console.error('[Store] acknowledgeSafetyEvent error:', err.message)
       throw err
     }

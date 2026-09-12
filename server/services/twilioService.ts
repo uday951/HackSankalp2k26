@@ -1,4 +1,3 @@
-import type twilio from 'twilio'
 import { ENV } from '../config/env.js'
 import { normalizePhoneNumber, isValidPhoneNumber } from '../utils/phone.js'
 
@@ -59,7 +58,7 @@ interface LocalOtpEntry {
 }
 
 export class TwilioService {
-  private client: twilio.Twilio | null = null
+  private client: any = null
   private isConfigured: boolean = false
   private verifyServiceSid: string = ''
   private fromNumber: string = ''
@@ -88,7 +87,7 @@ export class TwilioService {
         } else {
           this.isConfigured = false
           this.client = null
-          console.log('[TwilioService] Twilio package not available on disk. Running in DEV simulation mode.')
+          console.log('[TwilioService] Optional "twilio" module not found. Running in DEV mode (OTP & SMS logged safely to console).')
         }
       } catch (err: any) {
         this.isConfigured = false

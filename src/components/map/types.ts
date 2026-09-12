@@ -65,4 +65,6 @@ export interface CampusMapProps {
   autoFit?: boolean
   origin?: { lat: number; lng: number; name?: string }
   highlightStopStudentId?: string
+  rideBookedSeats?: number
+  rideCapacity?: number
 }

@@ -614,7 +614,9 @@ export class RouteProgressService {
           ride.destinationLat = destinationCoords.lat
           ride.destinationLng = destinationCoords.lng
         }
-        ride.routeName = `${pickup} → ${destination}`
+        if (pickup && destination && pickup.trim().toLowerCase() !== destination.trim().toLowerCase()) {
+          ride.routeName = `${pickup} → ${destination}`
+        }
       }
     }
 

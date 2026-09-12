@@ -18,7 +18,6 @@ import Card from '../../components/ui/Card'
 import Badge from '../../components/ui/Badge'
 import toast from 'react-hot-toast'
 import { compressImage } from '../../lib/utils'
-import { PhoneOtpModal } from '../../components/auth/PhoneOtpModal'
 
 export default function StudentFacultyAuth() {
   const navigate = useNavigate()
@@ -38,7 +37,6 @@ export default function StudentFacultyAuth() {
 
   // Multi-step Registration Wizard
   const [step, setStep] = useState<number>(1)
-  const [showOtpModal, setShowOtpModal] = useState<boolean>(false)
 
   // Form Fields
   const [fullName, setFullName] = useState('')
@@ -492,20 +490,6 @@ export default function StudentFacultyAuth() {
                 <ArrowRight size={16} />
               </Button>
 
-              <div className="relative flex py-2 items-center">
-                <div className="flex-grow border-t border-slate-200"></div>
-                <span className="flex-shrink mx-3 text-slate-400 text-xs font-semibold uppercase">Or</span>
-                <div className="flex-grow border-t border-slate-200"></div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setShowOtpModal(true)}
-                className="w-full py-3 px-4 rounded-xl border-2 border-blue-600 bg-blue-50/60 hover:bg-blue-100/80 text-blue-700 font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm"
-              >
-                <Phone size={15} className="text-blue-600" />
-                <span>Sign In via Twilio Phone OTP</span>
-              </button>
 
               {/* Quick 1-Click Demo Account for Evaluators */}
               <div className="pt-4 mt-4 border-t border-slate-100">
@@ -1142,16 +1126,6 @@ export default function StudentFacultyAuth() {
       <footer className="py-4 text-center text-xs text-slate-400 bg-white border-t border-slate-200">
         CampusFlow Mobility • Student & Faculty Portal
       </footer>
-
-      <PhoneOtpModal
-        isOpen={showOtpModal}
-        onClose={() => setShowOtpModal(false)}
-        role={userType}
-        initialPhone={phone}
-        onSuccess={() => {
-          navigate('/student/home')
-        }}
-      />
     </div>
   )
 }

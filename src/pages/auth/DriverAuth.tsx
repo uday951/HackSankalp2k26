@@ -14,7 +14,6 @@ import Card from '../../components/ui/Card'
 import Badge from '../../components/ui/Badge'
 import toast from 'react-hot-toast'
 import { compressImage } from '../../lib/utils'
-import { PhoneOtpModal } from '../../components/auth/PhoneOtpModal'
 
 export default function DriverAuth() {
   const navigate = useNavigate()
@@ -35,7 +34,6 @@ export default function DriverAuth() {
 
   // Multi-step Registration Wizard
   const [step, setStep] = useState<number>(1)
-  const [showOtpModal, setShowOtpModal] = useState<boolean>(false)
 
   // Registration Fields
   const [fullName, setFullName] = useState('')
@@ -483,21 +481,6 @@ export default function DriverAuth() {
                 Sign In with Password
                 <ArrowRight size={16} />
               </Button>
-
-              <div className="relative flex py-2 items-center">
-                <div className="flex-grow border-t border-slate-200"></div>
-                <span className="flex-shrink mx-3 text-slate-400 text-xs font-semibold uppercase">Or</span>
-                <div className="flex-grow border-t border-slate-200"></div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setShowOtpModal(true)}
-                className="w-full py-3 px-4 rounded-xl border-2 border-emerald-600 bg-emerald-50/60 hover:bg-emerald-100/80 text-emerald-800 font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm"
-              >
-                <Phone size={15} className="text-emerald-700" />
-                <span>Sign In via Twilio Phone OTP</span>
-              </button>
 
               {/* Demo Driver 1-Click Button */}
               <div className="pt-4 mt-4 border-t border-slate-100">
@@ -1423,16 +1406,6 @@ export default function DriverAuth() {
       <footer className="py-4 text-center text-xs text-slate-400 bg-white border-t border-slate-200">
         CampusFlow Mobility • Driver Fleet Operations
       </footer>
-
-      <PhoneOtpModal
-        isOpen={showOtpModal}
-        onClose={() => setShowOtpModal(false)}
-        role="driver"
-        initialPhone={phone}
-        onSuccess={() => {
-          navigate('/driver/dashboard')
-        }}
-      />
     </div>
   )
 }

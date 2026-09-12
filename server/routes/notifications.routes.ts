@@ -297,30 +297,25 @@ export const notificationRoutes: FastifyPluginAsync = async (fastify) => {
     if (targetUserIds.length > 0) {
       orConditions.push(
         { userId: { $in: targetUserIds } },
-        { studentId: { $in: targetUserIds } },
-        { 'metadata.studentId': { $in: targetUserIds } },
+        { studentId: { $in: targetUserIds }, role: { $in: ['student', 'faculty', 'STUDENT', 'FACULTY'] } },
         { 'metadata.receiverId': { $in: targetUserIds } }
       )
     }
 
     if (targetDriverIds.length > 0) {
       orConditions.push(
-        { driverId: { $in: targetDriverIds } },
-        { userId: { $in: targetDriverIds } },
-        { 'metadata.driverId': { $in: targetDriverIds } },
+        { driverId: { $in: targetDriverIds }, role: { $in: ['driver', 'DRIVER'] } },
+        { userId: { $in: targetDriverIds }, role: { $in: ['driver', 'DRIVER'] } },
+        { 'metadata.driverId': { $in: targetDriverIds }, role: { $in: ['driver', 'DRIVER'] } },
         { 'metadata.receiverId': { $in: targetDriverIds } },
         { 'metadata.recipientId': { $in: targetDriverIds } }
       )
     }
 
-    if (driverRideIds.length > 0) {
-      orConditions.push({ rideId: { $in: driverRideIds } })
-    }
-
+    // System-wide broadcasts only (notifications with no specific target user)
     if (userRole) {
-      orConditions.push({ role: userRole })
+      orConditions.push({ role: userRole, userId: { $in: [null, undefined, ''] } })
     }
-
     orConditions.push({ role: 'all' })
 
     const filter = orConditions.length > 0 ? { $or: orConditions } : {}

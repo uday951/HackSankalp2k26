@@ -6,6 +6,7 @@ export interface IEmergencyContact extends Document {
   name: string
   relationship: string
   phone: string
+  email?: string
   isPrimary: boolean
   createdAt: Date
   updatedAt: Date
@@ -18,6 +19,7 @@ const EmergencyContactSchema = new Schema<IEmergencyContact>(
     name: { type: String, required: true },
     relationship: { type: String, required: true, default: 'Parent' },
     phone: { type: String, required: true },
+    email: { type: String, default: '' },
     isPrimary: { type: Boolean, default: true },
   },
   { timestamps: true }

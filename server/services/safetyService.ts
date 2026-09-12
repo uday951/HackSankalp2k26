@@ -9,6 +9,7 @@ import { realtimeService } from './realtimeService.js'
 import { notificationService } from './notificationService.js'
 import { smsService } from './smsService.js'
 import { twilioService } from './twilioService.js'
+import { emailService } from './emailService.js'
 import { haversineDistanceMeters } from './routingService.js'
 import { ENV } from '../config/env.js'
 
@@ -110,7 +111,8 @@ export class SafetyService {
     lng?: number,
     emergencyPhone?: string,
     emergencyName?: string,
-    forceNew?: boolean
+    forceNew?: boolean,
+    emergencyEmail?: string
   ): Promise<any> {
     const user = await UserModel.findOne({
       $or: [
@@ -153,6 +155,16 @@ export class SafetyService {
       targetPhone = ENV.SOS_ALERT_PHONE_NUMBER || ''
     }
 
+    // Resolve target email for emergency contact
+    let targetEmail = ''
+    if (emergencyEmail && emergencyEmail.trim().includes('@')) {
+      targetEmail = emergencyEmail.trim()
+    } else if (emergencyContact?.email && emergencyContact.email.trim().includes('@')) {
+      targetEmail = emergencyContact.email.trim()
+    } else if (user?.email && user.email.includes('@')) {
+      targetEmail = user.email.trim()
+    }
+
     // Spam prevention: Check if user already has an active unresolved SOS in the last 15 mins
     const existingActive = await SafetyEventModel.findOne({
       userId: { $in: [userId, resolvedUserId] },
@@ -162,7 +174,7 @@ export class SafetyService {
     })
 
     const activeContactPhone = existingActive?.emergencyContact?.phone || ''
-    const contactChanged = Boolean(targetPhone && !isDummyPhone(targetPhone) && activeContactPhone !== targetPhone)
+    const contactChanged = Boolean(emergencyPhone && !isDummyPhone(emergencyPhone) && activeContactPhone !== emergencyPhone.trim())
 
     if (existingActive && !forceNew && !contactChanged) {
       console.log(`[SafetyService] Active SOS already open for user ${resolvedUserId} (${existingActive.id}). Returning existing alert to prevent duplicate spam.`)
@@ -214,6 +226,7 @@ export class SafetyService {
       if (emergencyContact) {
         emergencyContact.phone = cleanPhone
         if (cleanName) emergencyContact.name = cleanName
+        if (targetEmail && !emergencyContact.email) emergencyContact.email = targetEmail
         await emergencyContact.save()
       } else {
         emergencyContact = await EmergencyContactModel.create({
@@ -222,6 +235,7 @@ export class SafetyService {
           name: cleanName,
           relationship: 'Emergency Contact',
           phone: cleanPhone,
+          email: targetEmail || '',
           isPrimary: true,
         })
       }
@@ -293,8 +307,38 @@ export class SafetyService {
       console.log('[SafetyService] No emergency contact phone or SOS_ALERT_PHONE_NUMBER configured.')
     }
 
+    // 3. Dispatch Emergency Email Alert to Emergency Contact
+    let emailResult = { sent: false, status: 'NOT_CONFIGURED' as const, message: '' }
+    if (targetEmail) {
+      try {
+        emailResult = await emailService.sendEmergencySosEmail({
+          to: targetEmail,
+          userName: user?.name || resolvedUserId,
+          userRole,
+          tripId: ride?.id,
+          vehicleInfo: vehicle?.registrationNumber || vehicle?.name,
+          driverName: driverUser?.name || (isDriver ? user?.name : undefined),
+          locationStr: `${resolvedLat.toFixed(4)}, ${resolvedLng.toFixed(4)}`,
+          timestamp: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
+        })
+      } catch (emailErr: any) {
+        console.warn('[SafetyService] SOS email error (non-fatal):', emailErr?.message)
+        emailResult = {
+          sent: false,
+          status: 'FAILED',
+          message: emailErr?.message || 'Emergency email failed',
+        }
+      }
+    } else {
+      emailResult = {
+        sent: false,
+        status: 'NOT_CONFIGURED',
+        message: 'Emergency email could not be sent because no emergency contact email is configured.',
+      }
+    }
+
     const contactSummary = emergencyContact
-      ? `${emergencyContact.name} (${emergencyContact.relationship}: ${emergencyContact.phone})`
+      ? `${emergencyContact.name} (${emergencyContact.relationship}: ${emergencyContact.phone}${emergencyContact.email ? `, ${emergencyContact.email}` : ''})`
       : (ENV.SOS_ALERT_PHONE_NUMBER ? `Campus Security (${ENV.SOS_ALERT_PHONE_NUMBER})` : 'None registered')
 
     const message = isDriver
@@ -325,13 +369,16 @@ export class SafetyService {
             name: emergencyContact.name,
             relationship: emergencyContact.relationship,
             phone: emergencyContact.phone,
+            email: emergencyContact.email || targetEmail || undefined,
           }
-        : undefined,
+        : (targetEmail ? { name: emergencyName || 'Emergency Contact', relationship: 'Emergency Contact', phone: targetPhone || '', email: targetEmail } : undefined),
       smsStatus: smsResult.status,
       smsMessage: smsResult.message,
       callStatus: callResult.status,
       callSid: callResult.callSid,
       callMessage: callResult.message,
+      emailStatus: emailResult.status,
+      emailMessage: emailResult.message,
     })
 
     // Centralized Event Notification dispatch
@@ -373,9 +420,11 @@ export class SafetyService {
       user: user ? { id: user.id, name: user.name, phone: user.phone, role: user.role } : null,
       driver: driverUser ? { id: driverUser.id, name: driverUser.name, phone: driverUser.phone } : null,
       vehicle: vehicle ? { id: vehicle.id, name: vehicle.name, registration: vehicle.registrationNumber } : null,
-      emergencyContact,
+      emergencyContact: safetyEvent.emergencyContact,
       smsStatus: smsResult.status,
       callStatus: callResult.status,
+      emailStatus: emailResult.status,
+      emailMessage: emailResult.message,
       playAlarm: true,
     })
 
@@ -383,11 +432,10 @@ export class SafetyService {
       ...safetyEvent.toObject(),
       user: user ? { name: user.name, phone: user.phone, role: user.role } : null,
       driver: driverUser ? { name: driverUser.name, phone: driverUser.phone } : null,
-      emergencyContact: emergencyContact
-        ? { name: emergencyContact.name, relationship: emergencyContact.relationship, phone: emergencyContact.phone }
-        : null,
+      emergencyContact: safetyEvent.emergencyContact || null,
       smsResult,
       callResult,
+      emailResult,
       playAlarm: true,
     }
   }
@@ -414,6 +462,13 @@ export class SafetyService {
       driverName: event.driverName || driverUser?.name,
       studentId: event.userId,
       studentName: event.userName,
+    })
+
+    realtimeService.broadcast('SAFETY_EVENT_ACKNOWLEDGED', {
+      eventId,
+      status: 'ACKNOWLEDGED',
+      safetyEvent: event,
+      rideId: event.rideId,
     })
 
     realtimeService.broadcast('SAFETY_ALERT', {
@@ -466,6 +521,14 @@ export class SafetyService {
         })
       }
     }
+
+    realtimeService.broadcast('SAFETY_EVENT_RESOLVED', {
+      eventId,
+      resolved: true,
+      status: 'RESOLVED',
+      safetyEvent: event,
+      rideId: event.rideId,
+    })
 
     realtimeService.broadcast('SAFETY_ALERT', {
       eventId,

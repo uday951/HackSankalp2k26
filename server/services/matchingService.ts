@@ -9,8 +9,13 @@ export interface MatchScoreDetails {
   timeCompatibility: number
   pickupProximity: number
   detour: number
+  directionSimilarity?: number
   activeBonus?: number
   driverDistanceMeters?: number
+  routeOverlapPercent: number
+  detourPercent: number
+  additionalDistanceKm: number
+  additionalDurationMinutes: number
   explanation: {
     destinationLabel: string
     routeLabel: string
@@ -30,6 +35,48 @@ export interface RideMatchCandidate {
   estimatedExtraTimeMinutes: number
   estimatedExtraDistanceMeters: number
   driverDistanceMeters?: number
+  matchingReason?: string
+}
+
+export function calculateDirectionSimilarity(
+  a: { lat: number; lng: number } | number,
+  b: { lat: number; lng: number } | number,
+  c?: { lat: number; lng: number } | number,
+  d?: { lat: number; lng: number } | number,
+  lat3?: number,
+  lng3?: number,
+  lat4?: number,
+  lng4?: number
+): number {
+  let startA: { lat: number; lng: number }
+  let endA: { lat: number; lng: number }
+  let startB: { lat: number; lng: number }
+  let endB: { lat: number; lng: number }
+
+  if (typeof a === 'number' && typeof b === 'number' && typeof c === 'number' && typeof d === 'number') {
+    startA = { lat: a, lng: b }
+    endA = { lat: c, lng: d }
+    startB = { lat: lat3 ?? 0, lng: lng3 ?? 0 }
+    endB = { lat: lat4 ?? 0, lng: lng4 ?? 0 }
+  } else {
+    startA = a as { lat: number; lng: number }
+    endA = b as { lat: number; lng: number }
+    startB = c as { lat: number; lng: number }
+    endB = d as { lat: number; lng: number }
+  }
+
+  const dLatA = endA.lat - startA.lat
+  const dLngA = (endA.lng - startA.lng) * Math.cos(((startA.lat + endA.lat) / 2) * (Math.PI / 180))
+  const dLatB = endB.lat - startB.lat
+  const dLngB = (endB.lng - startB.lng) * Math.cos(((startB.lat + endB.lat) / 2) * (Math.PI / 180))
+
+  const magA = Math.sqrt(dLatA * dLatA + dLngA * dLngA)
+  const magB = Math.sqrt(dLatB * dLatB + dLngB * dLngB)
+
+  if (magA < 0.0001 || magB < 0.0001) return 1.0 // Stationary or identical
+  const dot = dLatA * dLatB + dLngA * dLngB
+  const cosSim = dot / (magA * magB)
+  return Math.max(-1, Math.min(1, cosSim))
 }
 
 // Parse "8:15 AM" -> minutes since midnight
@@ -170,6 +217,30 @@ export class MatchingService {
       activeScore = 60
     }
 
+    // Direction and trajectory vector alignment
+    const directionSim = calculateDirectionSimilarity(
+      { lat: vehicleLat, lng: vehicleLng },
+      { lat: ride.destinationLat, lng: ride.destinationLng },
+      { lat: request.pickupLat, lng: request.pickupLng },
+      { lat: request.destinationLat, lng: request.destinationLng }
+    )
+
+    const destDistMeters = haversineDistanceMeters(
+      ride.destinationLat,
+      ride.destinationLng,
+      request.destinationLat,
+      request.destinationLng
+    )
+
+    // Hard constraint: If directions are divergent (cos < -0.2) and destinations are far (> 3 km), cannot share trip
+    if (directionSim < -0.2 && destDistMeters > 3000) {
+      return this.buildIncompatibleResponse(
+        ride,
+        availableSeats,
+        'Opposite route direction: passenger destination diverges significantly from trip route.'
+      )
+    }
+
     // 4. Destination Compatibility (15% Weight)
     let destScore = 20
     if (
@@ -179,16 +250,10 @@ export class MatchingService {
     ) {
       destScore = 100
     } else {
-      const dDist = haversineDistanceMeters(
-        ride.destinationLat,
-        ride.destinationLng,
-        request.destinationLat,
-        request.destinationLng
-      )
-      if (dDist < 800) destScore = 90
-      else if (dDist < 2000) destScore = 75
-      else if (dDist < 4000) destScore = 50
-      else if (dDist < 7000) destScore = 30
+      if (destDistMeters < 800) destScore = 90
+      else if (destDistMeters < 2000) destScore = 75
+      else if (destDistMeters < 4000) destScore = 50
+      else if (destDistMeters < 7000) destScore = 30
       else destScore = 10
     }
 
@@ -205,12 +270,14 @@ export class MatchingService {
     let extraSeconds = 0
     let detourScore = 80
     let routeScore = 70
+    let percentDetour = 0
 
     if (driverDistMeters < 500 || minRoutePickupDist < 400) {
       routeScore = 95
       detourScore = 95
       extraSeconds = 60
       extraDistance = 150
+      percentDetour = 2
     } else {
       const existingWaypoints: [number, number][] = [
         [vehicleLat, vehicleLng],
@@ -225,11 +292,21 @@ export class MatchingService {
 
       extraDistance = detourResult.extraDistanceMeters
       extraSeconds = detourResult.extraDurationSeconds
+      percentDetour = detourResult.percentDetour
 
       detourScore =
         extraSeconds <= 120 ? 95 : extraSeconds <= 300 ? 80 : extraSeconds <= 450 ? 55 : 20
 
       routeScore = Math.max(20, Math.round(100 - detourResult.percentDetour * 2.5))
+    }
+
+    // Strict Detour Constraint: More than 40% detour or more than 12 min extra delay is rejected
+    if (percentDetour > 40 || extraSeconds > 720) {
+      return this.buildIncompatibleResponse(
+        ride,
+        availableSeats,
+        `Excessive detour (${Math.round(percentDetour)}% detour, +${Math.round(extraSeconds / 60)} min). Requires separate vehicle.`
+      )
     }
 
     // Total weighted score (40% Prox + 15% Active + 15% Route + 15% Dest + 10% Detour + 5% Time)
@@ -264,8 +341,13 @@ export class MatchingService {
       timeCompatibility: timeScore,
       pickupProximity: proxScore,
       detour: detourScore,
+      directionSimilarity: Math.round(directionSim * 100) / 100,
       activeBonus: activeScore,
       driverDistanceMeters: Math.round(driverDistMeters),
+      routeOverlapPercent: Math.round(routeScore),
+      detourPercent: Math.round(percentDetour),
+      additionalDistanceKm: Math.round(extraDistance / 100) / 10,
+      additionalDurationMinutes: Math.round(extraSeconds / 60),
       explanation: {
         destinationLabel: getRatingLabel(destScore),
         routeLabel: getRatingLabel(routeScore),
@@ -276,15 +358,22 @@ export class MatchingService {
       },
     }
 
+    const isCompatible =
+      totalScore >= 50 &&
+      availableSeats >= request.seatsRequested &&
+      percentDetour <= 40 &&
+      directionSim >= -0.2
+
     return {
       rideId: ride.id,
       ride,
       score: scoreDetails,
       availableSeats,
-      compatible: totalScore >= 50 && availableSeats >= request.seatsRequested,
+      compatible: isCompatible,
       estimatedExtraTimeMinutes: Math.round(extraSeconds / 60),
       estimatedExtraDistanceMeters: Math.round(extraDistance),
       driverDistanceMeters: Math.round(driverDistMeters),
+      matchingReason: isCompatible ? 'ROUTE_COMPATIBLE_SHARED_TRIP' : 'INSUFFICIENT_COMPATIBILITY',
     }
   }
 
@@ -349,6 +438,11 @@ export class MatchingService {
         timeCompatibility: 0,
         pickupProximity: 0,
         detour: 0,
+        directionSimilarity: -1,
+        routeOverlapPercent: 0,
+        detourPercent: 100,
+        additionalDistanceKm: 0,
+        additionalDurationMinutes: 0,
         explanation: {
           destinationLabel: 'Incompatible',
           routeLabel: 'Incompatible',
@@ -362,8 +456,11 @@ export class MatchingService {
       compatible: false,
       estimatedExtraTimeMinutes: 0,
       estimatedExtraDistanceMeters: 0,
+      matchingReason: reason,
     }
   }
+
+  calculateDirectionSimilarity = calculateDirectionSimilarity
 }
 
 export const matchingService = new MatchingService()

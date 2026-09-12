@@ -235,6 +235,10 @@ const BookRide: React.FC = () => {
     const newErrors: Record<string, string> = {};
     if (!pickupPlace) newErrors.pickup = 'Please enter a pickup location.';
     if (!destinationPlace) newErrors.destination = 'Please select a destination.';
+    if (pickupPlace && destinationPlace && pickupPlace.name.trim().toLowerCase() === destinationPlace.name.trim().toLowerCase()) {
+      newErrors.destination = 'Pickup and destination cannot be the same location.';
+      toast.error('Pickup and destination cannot be the same location.');
+    }
     if (!time) newErrors.time = 'Please select a departure time.';
     if (routeType === 'recurring' && recurringDays.length === 0)
       newErrors.days = 'Select at least one recurring day.';

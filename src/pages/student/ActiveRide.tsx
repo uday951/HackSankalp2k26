@@ -11,6 +11,7 @@ import Badge from '../../components/ui/Badge'
 import Avatar from '../../components/ui/Avatar'
 import SeatProgress from '../../components/ui/SeatProgress'
 import CampusMap from '../../components/map/CampusMap'
+import { resolveDriverInfo } from '../../utils/driverDirectory'
 
 export default function ActiveRide() {
   const navigate = useNavigate()
@@ -60,18 +61,25 @@ export default function ActiveRide() {
     )
   }
 
-  const driver =
-    (activeRide ? drivers.find((d) => d.id === activeRide.driverId) : undefined) ||
-    (activeRide?.driverId
-      ? {
-          id: activeRide.driverId,
-          name: (activeRide as any).driverName || 'Campus Driver',
-          phone: (activeRide as any).driverPhone || '+91 98765 43210',
-          rating: 4.9,
-          totalTrips: 120,
-        }
-      : undefined)
-  const vehicle = vehicles.find((v) => v.id === activeRide.vehicleId)
+  const driverInfo = resolveDriverInfo(activeRide?.driverId, (activeRide as any)?.driverName, drivers)
+  const matchedDriver = activeRide ? drivers.find((d) => d.id === activeRide.driverId) : undefined
+  const driver = matchedDriver || {
+    id: activeRide?.driverId || driverInfo.id,
+    name: (activeRide as any)?.driverName && !(activeRide as any).driverName.toLowerCase().includes('campus driver')
+      ? (activeRide as any).driverName
+      : driverInfo.name,
+    phone: (activeRide as any)?.driverPhone || driverInfo.phone,
+    rating: (activeRide as any)?.driverRating || driverInfo.rating,
+    totalTrips: driverInfo.totalTrips,
+    avatar: (activeRide as any)?.driverAvatar || driverInfo.avatar,
+  }
+  const matchedVehicle = vehicles.find((v) => v.id === activeRide?.vehicleId)
+  const vehicle = matchedVehicle || {
+    id: activeRide?.vehicleId || driverInfo.vehicleId,
+    name: (activeRide as any)?.vehicleName || driverInfo.vehicleName,
+    registration: (activeRide as any)?.vehiclePlate || driverInfo.vehicleRegistration,
+    vehicleType: driverInfo.vehicleType,
+  }
   const myBooking = bookings.find((b) => b.rideId === activeRide.id && b.studentId === currentStudentId && b.status === 'confirmed')
   const rideMessages = messages.filter((m) => m.rideId === activeRide.id)
   const unreadFromDriver = rideMessages.filter((m) => m.fromRole === 'driver' && !m.read).length
@@ -169,32 +177,44 @@ export default function ActiveRide() {
           vehicleLng={activeRide.currentLng}
           height="h-64"
           interactive
+          rideBookedSeats={activeRide.bookedSeats}
+          rideCapacity={activeRide.capacity}
         />
         {/* Floating ETA Badge */}
         <div className="absolute top-3 left-3 bg-white/95 backdrop-blur-md px-3.5 py-1.5 rounded-xl shadow-md border border-slate-200 flex items-center gap-2">
           <Clock size={14} className="text-primary-600" />
-          <span className="text-xs font-bold text-slate-900">Arriving in ~6 min</span>
+          <span className="text-xs font-bold text-slate-900">
+            {activeRide.estimatedArrival ? `ETA: ${activeRide.estimatedArrival}` : 'En Route'}
+          </span>
         </div>
       </div>
 
       {/* Next Pickup Card */}
-      <Card className="mb-4 bg-gradient-to-r from-primary-50 to-white border-primary-200" padding="md">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-primary-600 text-white flex items-center justify-center flex-shrink-0">
-              <MapPin size={20} />
+      {(() => {
+        const nextStop = activeRide.stops?.find((s: any) => s.status === 'UPCOMING' || s.status === 'ARRIVING' || s.status === 'ARRIVED') || activeRide.pickupPoints?.[0]
+        const nextStopName = nextStop?.name || activeRide.destination || 'Campus Destination'
+        return (
+          <Card className="mb-4 bg-gradient-to-r from-primary-50 to-white border-primary-200" padding="md">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-primary-600 text-white flex items-center justify-center flex-shrink-0">
+                  <MapPin size={20} />
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-primary-700 uppercase tracking-wider">Next Stop</p>
+                  <p className="font-heading font-bold text-slate-900 text-sm">{nextStopName}</p>
+                  <p className="text-[11px] text-slate-500">
+                    {(nextStop as any)?.estimatedPickupTime || (nextStop as any)?.time ? `Estimated: ${(nextStop as any).estimatedPickupTime || (nextStop as any).time}` : `Heading to ${activeRide.destination}`}
+                  </p>
+                </div>
+              </div>
+              <Button size="sm" variant="secondary" onClick={() => navigate(`/student/live?rideId=${activeRide.id}`)}>
+                Full Screen
+              </Button>
             </div>
-            <div>
-              <p className="text-xs font-medium text-primary-700 uppercase tracking-wider">Next Stop</p>
-              <p className="font-heading font-bold text-slate-900 text-sm">Hostel B Bay</p>
-              <p className="text-[11px] text-slate-500">4 minutes away · 2 boarding</p>
-            </div>
-          </div>
-          <Button size="sm" variant="secondary" onClick={() => navigate(`/student/live?rideId=${activeRide.id}`)}>
-            Full Screen
-          </Button>
-        </div>
-      </Card>
+          </Card>
+        )
+      })()}
 
       {/* Driver & Vehicle Card */}
       {driver && vehicle && (
@@ -208,7 +228,7 @@ export default function ActiveRide() {
                   <Badge variant="green" size="sm">Verified</Badge>
                 </div>
                 <p className="text-xs text-slate-500">{vehicle.name} · {vehicle.registration}</p>
-                <p className="text-[11px] text-amber-600 font-medium mt-0.5">★ {driver.rating} Campus Driver</p>
+                <p className="text-[11px] text-amber-600 font-medium mt-0.5">★ {driver.rating} · Verified Driver ({driver.totalTrips || 150}+ trips)</p>
                 {driver.phone && (
                   <a href={`tel:${driver.phone}`} className="text-xs text-primary-600 font-medium hover:underline flex items-center gap-1 mt-0.5">
                     <Phone size={11} /> {driver.phone}

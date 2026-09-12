@@ -861,11 +861,13 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
       name?: string
       relationship?: string
       phone?: string
+      email?: string
     }
 
     const name = (body.name || '').trim()
     const relationship = (body.relationship || 'Parent').trim()
     const phone = (body.phone || '').trim()
+    const email = (body.email || '').trim().toLowerCase()
 
     // Strict Validation per prompt requirements
     if (!name || name.length < 2) {
@@ -917,6 +919,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
       contact.name = name
       contact.relationship = relationship
       contact.phone = phone
+      if (email) contact.email = email
       contact.isPrimary = true
       await contact.save()
     } else {
@@ -926,6 +929,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
         name,
         relationship,
         phone,
+        email: email || '',
         isPrimary: true,
       })
     }

@@ -60,6 +60,8 @@ export default function CampusMap({
   autoFit = true,
   origin,
   highlightStopStudentId,
+  rideBookedSeats,
+  rideCapacity,
 }: CampusMapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null)
   const mapInstanceRef = useRef<L.Map | null>(null)
@@ -545,8 +547,8 @@ export default function CampusMap({
     if (singleVLat !== undefined && singleVLng !== undefined && (!vehicles || vehicles.length === 0)) {
       const vIcon = createVehicleIcon({
         name: 'Campus Shuttle',
-        bookedSeats: 4,
-        capacity: 6,
+        bookedSeats: rideBookedSeats,
+        capacity: rideCapacity,
         isAlert: alertMode,
         heading: vehicleHeading || 0,
       })

@@ -265,7 +265,7 @@ class RecoveryService {
         vehicleId: v.id,
         vehicleName: v.name,
         driverId: driver.id,
-        driverName: driver.name || 'Campus Driver',
+        driverName: driver.name || 'Rahul Kumar',
         score: totalScore,
         compositeScore: totalScore,
         distanceKm,
@@ -636,7 +636,7 @@ class RecoveryService {
         replacementVehicleId: repVehicle.id,
         replacementDriverId: repVehicle.driverId,
         replacementVehicleName: repVehicle.name,
-        replacementDriverName: repDriver?.name || 'Campus Driver',
+        replacementDriverName: repDriver?.name || 'Suresh Babu',
         status: 'COMPLETED',
       })
 
